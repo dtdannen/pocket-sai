@@ -17,37 +17,20 @@ BOARD_SIZE = 19
 def load_stone_images():
     template = cv2.imread(IMAGES_DIR+'WhiteStone1',0)
 
-def dotransform():
-    img = cv2.imread(IMAGES_DIR + 'EmptyBoard1.jpg')
-    rows,cols,ch = img.shape
-    
-    pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
-    pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
-     
-    M = cv2.getPerspectiveTransform(pts1,pts2)
-    dst = cv2.warpPerspective(img,M,(1500,2000))
-    
-    plt.subplot(121),plt.imshow(img),plt.title('Input')
-    plt.subplot(122),plt.imshow(dst),plt.title('Output')
-    plt.show()
-    pass
-
-def main():
-    ###### detect four corners and draw grid overlay
-    # read in images of the corners
-    tlc_template = cv2.imread(IMAGES_DIR + 'TopLeftCorner1.jpg',0)
+def getcornerpts(main_img):
+    tlc_template = cv2.imread(IMAGES_DIR + 'TopLeftCorner4.jpg',0)
     tlc_w, tlc_h = tlc_template.shape[::-1]
     tlc_w_offset = tlc_w / 2
     tlc_h_offset = tlc_h / 2
-    trc_template = cv2.imread(IMAGES_DIR + 'TopRightCorner1.jpg',0)
+    trc_template = cv2.imread(IMAGES_DIR + 'TopRightCorner4.jpg',0)
     trc_w, trc_h = trc_template.shape[::-1]
     trc_w_offset = trc_w / 2
     trc_h_offset = trc_h / 2
-    blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner1.jpg',0)
+    blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner4.jpg',0)
     blc_w, blc_h = blc_template.shape[::-1]
     blc_w_offset = blc_w / 2
     blc_h_offset = blc_h / 2
-    brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner1.jpg',0)
+    brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner4.jpg',0)
     brc_w, brc_h = brc_template.shape[::-1]
     brc_w_offset = brc_w / 2
     brc_h_offset = brc_h / 2
@@ -62,7 +45,7 @@ def main():
 #     cv2.waitKey(0)
 #      
     # read in whole image of board
-    img_rgb = cv2.imread(IMAGES_DIR + 'EmptyBoard1.jpg')
+    img_rgb = main_img
     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
      
     tlc_res = cv2.matchTemplate(img_gray,tlc_template,cv2.TM_CCOEFF_NORMED)
@@ -85,6 +68,36 @@ def main():
     brc_loc = np.where( brc_res >= threshold)
     brc_loc_pt = zip(*brc_loc[::-1])[0]
     brc_loc_pt_middle = tuple([brc_loc_pt[0] + brc_w_offset,brc_loc_pt[1] + brc_h_offset])
+
+    return tlc_loc_pt_middle, trc_loc_pt_middle, blc_loc_pt_middle, brc_loc_pt_middle
+
+def transform():
+    img = cv2.imread(IMAGES_DIR + 'EarlyGame4.jpg')
+    rows,cols,ch = img.shape
+    
+    # get the original four corners via template matching
+    tlc,trc,blc,brc = getcornerpts(img)
+    origin_x = tlc[0]
+    origin_y = tlc[1]
+    bottom_y = blc[1]
+    right_x = trc[0]
+    pts1 = np.float32([tlc,trc,blc,brc])
+    pts2 = np.float32([tlc,[right_x,origin_y],[origin_x,bottom_y],[right_x,bottom_y]])
+    #pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
+    #pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
+     
+    M = cv2.getPerspectiveTransform(pts1,pts2)
+    dst = cv2.warpPerspective(img,M,(right_x+200,bottom_y+200))
+    
+    plt.subplot(121),plt.imshow(img),plt.title('Input')
+    plt.subplot(122),plt.imshow(dst),plt.title('Output')
+    plt.show()
+    pass
+
+def main():
+    ###### detect four corners and draw grid overlay
+    # read in images of the corners
+    
      
      
     # draw the boarders of the board's playing field
@@ -151,4 +164,4 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    dotransform()
+    transform()
