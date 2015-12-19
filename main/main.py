@@ -17,6 +17,21 @@ BOARD_SIZE = 19
 def load_stone_images():
     template = cv2.imread(IMAGES_DIR+'WhiteStone1',0)
 
+def dotransform():
+    img = cv2.imread(IMAGES_DIR + 'EmptyBoard1.jpg')
+    rows,cols,ch = img.shape
+    
+    pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
+    pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
+     
+    M = cv2.getPerspectiveTransform(pts1,pts2)
+    dst = cv2.warpPerspective(img,M,(1500,2000))
+    
+    plt.subplot(121),plt.imshow(img),plt.title('Input')
+    plt.subplot(122),plt.imshow(dst),plt.title('Output')
+    plt.show()
+    pass
+
 def main():
     ###### detect four corners and draw grid overlay
     # read in images of the corners
@@ -135,4 +150,5 @@ def main():
     #plt.show()
 
 if __name__ == '__main__':
-    main()
+    #main()
+    dotransform()
