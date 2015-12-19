@@ -18,19 +18,19 @@ def load_stone_images():
     template = cv2.imread(IMAGES_DIR+'WhiteStone1',0)
 
 def getcornerpts(main_img):
-    tlc_template = cv2.imread(IMAGES_DIR + 'TopLeftCorner4.jpg',0)
+    tlc_template = cv2.imread(IMAGES_DIR + 'TopLeftCorner1.jpg',0)
     tlc_w, tlc_h = tlc_template.shape[::-1]
     tlc_w_offset = tlc_w / 2
     tlc_h_offset = tlc_h / 2
-    trc_template = cv2.imread(IMAGES_DIR + 'TopRightCorner4.jpg',0)
+    trc_template = cv2.imread(IMAGES_DIR + 'TopRightCorner1.jpg',0)
     trc_w, trc_h = trc_template.shape[::-1]
     trc_w_offset = trc_w / 2
     trc_h_offset = trc_h / 2
-    blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner4.jpg',0)
+    blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner1.jpg',0)
     blc_w, blc_h = blc_template.shape[::-1]
     blc_w_offset = blc_w / 2
     blc_h_offset = blc_h / 2
-    brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner4.jpg',0)
+    brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner1.jpg',0)
     brc_w, brc_h = brc_template.shape[::-1]
     brc_w_offset = brc_w / 2
     brc_h_offset = brc_h / 2
@@ -71,8 +71,8 @@ def getcornerpts(main_img):
 
     return tlc_loc_pt_middle, trc_loc_pt_middle, blc_loc_pt_middle, brc_loc_pt_middle
 
-def transform():
-    img = cv2.imread(IMAGES_DIR + 'EarlyGame4.jpg')
+def transform(img):
+    
     rows,cols,ch = img.shape
     
     # get the original four corners via template matching
@@ -82,23 +82,83 @@ def transform():
     bottom_y = blc[1]
     right_x = trc[0]
     pts1 = np.float32([tlc,trc,blc,brc])
-    pts2 = np.float32([tlc,[right_x,origin_y],[origin_x,bottom_y],[right_x,bottom_y]])
+    new_tlc = tlc
+    new_trc = [right_x,origin_y]
+    new_blc = [origin_x,bottom_y]
+    new_brc = [right_x,bottom_y]
+    pts2 = np.float32([new_tlc,new_trc,new_blc,new_brc])
     #pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
     #pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
      
     M = cv2.getPerspectiveTransform(pts1,pts2)
     dst = cv2.warpPerspective(img,M,(right_x+200,bottom_y+200))
     
-    plt.subplot(121),plt.imshow(img),plt.title('Input')
-    plt.subplot(122),plt.imshow(dst),plt.title('Output')
+    #plt.subplot(121),plt.imshow(img),plt.title('Input')
+    #plt.subplot(122),plt.imshow(dst),plt.title('Output')
+    #plt.show()
+    
+    return dst,new_tlc,new_trc,new_blc,new_brc
+    
+
+def computegrid(img,tlc,trc,blc,brc):
+    '''
+    Given an image and 4 coordinates representing each corner, return
+    a grid of locations corresponding to the Go Board intersections. The
+    return value is a 2d array, where element arr[0][0] is the top left corner
+    intersection of the board. The value of the array is the pixel location.
+    
+    Assumption: given img has been transformed to remove any skew, so that the distances
+    between columns and rows is consistent. In order to do this, call transform on the
+    img before returning it. You need to also return the new coordinates.
+    '''
+    
+    # grid is a mapping of coordinates (0,0) to pixels in the image
+    grid = []
+    
+    col_dist = (trc[0] - tlc[0]) / BOARD_SIZE
+    row_dist = (blc[1] - tlc[1]) / BOARD_SIZE
+    print("col_dist is "+str(col_dist)+",row_dist is "+str(row_dist))
+    origin_x = tlc[0]
+    origin_y = tlc[1]
+    
+    row_y_offset = 0
+    
+    for r in range(BOARD_SIZE+1):
+        row = []
+        col_x_offset = 0
+        for c in range(BOARD_SIZE+1):
+            row.append(tuple([origin_x+col_x_offset,origin_y+row_y_offset]))
+            print("just appended point: "+str([origin_x+col_x_offset,origin_y+row_y_offset]))
+            col_x_offset += col_dist
+        grid.append(row)
+        row_y_offset += row_dist
+        
+    return grid
+
+def showgrid(img, grid):
+    '''
+    Show the new image with lines draw on it
+    '''
+
+    for row in grid:
+        for pt in row: # pt is the same as col
+            print("drawing circle at pt "+str(pt))
+            cv2.circle(img,pt,3,(255,255,255),3)
+
+    plt.subplot(111),plt.imshow(img),plt.title('Input')
+    #plt.subplot(122),plt.imshow(dst),plt.title('Output')
     plt.show()
-    pass
 
 def main():
     ###### detect four corners and draw grid overlay
     # read in images of the corners
-    
-     
+    img = cv2.imread(IMAGES_DIR + 'MidGame1.jpg')
+    print("Transforming image...")
+    img,new_tlc,new_trc,new_blc,new_brc = transform(img)
+    print("Computing Grid...") 
+    grid = computegrid(img, new_tlc, new_trc, new_blc, new_brc)
+    print("Drawing image with grid...") 
+    showgrid(img, grid) 
      
     # draw the boarders of the board's playing field
     cv2.line(img_rgb,tlc_loc_pt_middle,trc_loc_pt_middle,(0,255,0),2)
@@ -163,5 +223,5 @@ def main():
     #plt.show()
 
 if __name__ == '__main__':
-    #main()
-    transform()
+    main()
+    #transform()
