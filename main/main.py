@@ -27,7 +27,9 @@ def getcornerpts(main_img):
     trc_w_offset = trc_w / 2
     trc_h_offset = trc_h / 2
     blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner1.jpg',0)
+    print("blc_template.shape = "+str(blc_template.shape[::-1]))
     blc_w, blc_h = blc_template.shape[::-1]
+    print("blc_w, blc_h = "+str(blc_w)+","+str(blc_h))
     blc_w_offset = blc_w / 2
     blc_h_offset = blc_h / 2
     brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner1.jpg',0)
