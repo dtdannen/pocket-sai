@@ -10,29 +10,90 @@ from matplotlib import pyplot as plt
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
-CORNER_IMAGES = ['TopLeftCorner1.jpg','TopRightCorner1.jpg','BottomLeftCorner1.jpg','BottomRightCorner1.jpg']
-
+CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
+CORNER_POINTS = [[139,152],[508,156],[29,432],[634,432]]
+INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
+THRESHOLD = 0.7
 BOARD_SIZE = 19
+
+def getvideo():
+    frames_to_save = 2
+    cv2.namedWindow("preview")
+    vc = cv2.VideoCapture(1)
+    
+    if vc.isOpened(): # try to get the first frame
+        rval, frame = vc.read()
+        
+        # now perform pattern matching to get corners
+        #for frame_count in range(frames_to_save):
+        #    cv2.imwrite(IMAGES_DIR+"webcam-empty-board"+str(frame_count)+".jpg", frame)
+        
+        try:
+            img,new_tlc,new_trc,new_blc,new_brc = transform(frame.copy())
+            # draw the boarders of the board's playing field
+            cv2.line(img,tuple(new_tlc),tuple(new_trc),(0,255,0),2)
+            cv2.line(img,tuple(new_trc),tuple(new_brc),(0,255,0),2)
+            cv2.line(img,tuple(new_brc),tuple(new_blc),(0,255,0),2)
+            cv2.line(img,tuple(new_blc),tuple(new_tlc),(0,255,0),2)
+            img = drawintersections(img)
+        except:
+            img = frame
+        
+    else:
+        rval = False
+    
+    while rval:
+        cv2.imshow("preview", img)
+        rval, frame = vc.read()
+        try:
+            img,new_tlc,new_trc,new_blc,new_brc = transform(frame.copy())
+            # draw the boarders of the board's playing field
+            cv2.line(img,tuple(new_tlc),tuple(new_trc),(0,255,0),2)
+            cv2.line(img,tuple(new_trc),tuple(new_brc),(0,255,0),2)
+            cv2.line(img,tuple(new_brc),tuple(new_blc),(0,255,0),2)
+            cv2.line(img,tuple(new_blc),tuple(new_tlc),(0,255,0),2)
+            img = drawintersections(img)
+            #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
+        except:
+            img = frame
+        
+        key = cv2.waitKey(10000)
+        if key == 27: # exit on ESC
+            break
+    cv2.destroyWindow("preview")
 
 def load_stone_images():
     template = cv2.imread(IMAGES_DIR+'WhiteStone1',0)
 
+def drawintersections(img):
+    intersection_template = cv2.imread(IMAGES_DIR+INTERSECTION_FN,0)
+    w, h = intersection_template.shape[::-1]
+    img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
+    res = cv2.matchTemplate(img,intersection_template,cv2.TM_CCOEFF_NORMED)
+    
+    loc = np.where( res >= THRESHOLD)
+    print("loc is "+str(loc))
+    for pt in zip(*loc[::-1]):
+        cv2.rectangle(img, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
+    
+    return img
+
 def getcornerpts(main_img):
-    tlc_template = cv2.imread(IMAGES_DIR + 'TopLeftCorner1.jpg',0)
+    tlc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[0],0)
     tlc_w, tlc_h = tlc_template.shape[::-1]
     tlc_w_offset = tlc_w / 2
     tlc_h_offset = tlc_h / 2
-    trc_template = cv2.imread(IMAGES_DIR + 'TopRightCorner1.jpg',0)
+    trc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[1],0)
     trc_w, trc_h = trc_template.shape[::-1]
     trc_w_offset = trc_w / 2
     trc_h_offset = trc_h / 2
-    blc_template = cv2.imread(IMAGES_DIR + 'BottomLeftCorner1.jpg',0)
-    print("blc_template.shape = "+str(blc_template.shape[::-1]))
+    blc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[2],0)
+    #print("blc_template.shape = "+str(blc_template.shape[::-1]))
     blc_w, blc_h = blc_template.shape[::-1]
-    print("blc_w, blc_h = "+str(blc_w)+","+str(blc_h))
+    #print("blc_w, blc_h = "+str(blc_w)+","+str(blc_h))
     blc_w_offset = blc_w / 2
     blc_h_offset = blc_h / 2
-    brc_template = cv2.imread(IMAGES_DIR + 'BottomRightCorner1.jpg',0)
+    brc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[3],0)
     brc_w, brc_h = brc_template.shape[::-1]
     brc_w_offset = brc_w / 2
     brc_h_offset = brc_h / 2
@@ -55,19 +116,19 @@ def getcornerpts(main_img):
     blc_res = cv2.matchTemplate(img_gray,blc_template,cv2.TM_CCOEFF_NORMED)
     brc_res = cv2.matchTemplate(img_gray,brc_template,cv2.TM_CCOEFF_NORMED)
      
-    threshold = 0.9
-    tlc_loc = np.where( tlc_res >= threshold)
+    tlc_loc = np.where( tlc_res >= THRESHOLD)
     tlc_loc_pt = zip(*tlc_loc[::-1])[0]
     tlc_loc_pt_middle = tuple([tlc_loc_pt[0] + tlc_w_offset,tlc_loc_pt[1] + tlc_h_offset])
-    #print(str(tlc_loc_pt))
-    #print("new point = "+str(tlc_loc_pt_middle))
-    trc_loc = np.where( trc_res >= threshold)
+    print(str(tlc_loc_pt))
+    print("new point = "+str(tlc_loc_pt_middle))
+    trc_loc = np.where( trc_res >= THRESHOLD)
+    print(str(trc_loc))
     trc_loc_pt = zip(*trc_loc[::-1])[0]
     trc_loc_pt_middle = tuple([trc_loc_pt[0] + trc_w_offset,trc_loc_pt[1] + trc_h_offset])
-    blc_loc = np.where( blc_res >= threshold)
+    blc_loc = np.where( blc_res >= THRESHOLD)
     blc_loc_pt = zip(*blc_loc[::-1])[0]
     blc_loc_pt_middle = tuple([blc_loc_pt[0] + blc_w_offset,blc_loc_pt[1] + blc_h_offset])
-    brc_loc = np.where( brc_res >= threshold)
+    brc_loc = np.where( brc_res >= THRESHOLD)
     brc_loc_pt = zip(*brc_loc[::-1])[0]
     brc_loc_pt_middle = tuple([brc_loc_pt[0] + brc_w_offset,brc_loc_pt[1] + brc_h_offset])
 
@@ -78,7 +139,8 @@ def transform(img):
     rows,cols,ch = img.shape
     
     # get the original four corners via template matching
-    tlc,trc,blc,brc = getcornerpts(img)
+    #tlc,trc,blc,brc = getcornerpts(img)
+    tlc,trc,blc,brc = CORNER_POINTS
     origin_x = tlc[0]
     origin_y = tlc[1]
     bottom_y = blc[1]
@@ -206,8 +268,8 @@ def main():
 #         w, h = template.shape[::-1]
 #  
 #         res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
-#         threshold = 0.85
-#         loc = np.where( res >= threshold)
+#         THRESHOLD = 0.85
+#         loc = np.where( res >= THRESHOLD)
 #         for pt in zip(*loc[::-1]):
 #             cv2.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
 #  
@@ -225,5 +287,6 @@ def main():
     #plt.show()
 
 if __name__ == '__main__':
-    main()
+    #main()
     #transform()
+    getvideo()
