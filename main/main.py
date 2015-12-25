@@ -7,11 +7,12 @@ Created on Dec 10, 2015
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
+import time
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
 CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
-CORNER_POINTS = [[139,152],[508,156],[29,432],[634,432]]
+CORNER_POINTS = []#[[139,152],[508,156],[29,432],[634,432]]
 INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
@@ -21,18 +22,22 @@ n_clicks = 0
 points = []
 
 def dostuff(img):
-    #img,tlc,trc,blc,brc = transform(img.copy())
-    # draw the boarders of the board's playing field
-#     cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
-#     cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
-#     cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
-#     cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
+    img,tlc,trc,blc,brc = transform(img.copy())
+    #draw the boarders of the board's playing field
+    cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
+    cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
+    cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
+    cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
     #img = drawintersections(img)
     #img = cv2.medianBlur(img,5)
+    
     # crop image
-    #crop_x = trc[0] - tlc[0]
-    #crop_y = blc[1] - tlc[1]
-    #img = img[tlc[0]:tlc[1],crop_x:crop_y]
+    buffer = 10
+    x1 = tlc[0] - buffer
+    x2 = trc[0] + buffer
+    y1 = tlc[1] - buffer
+    y2 = blc[1] + buffer
+    img = img[y1:y2,x1:x2]
     
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray,50,150,apertureSize = 3)
@@ -41,9 +46,9 @@ def dostuff(img):
 #     plt.subplot(122),plt.imshow(edges,cmap = 'gray')
 #     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
 #     plt.show()
-    
+    #images = []
     lines = cv2.HoughLines(edges,1,np.pi/180,190)
-    print("found "+str(len(lines))+" lines")
+    #print("found "+str(len(lines))+" lines")
     for line in lines:
         for rho,theta in line:
             a = np.cos(theta)
@@ -56,7 +61,12 @@ def dostuff(img):
             y2 = int(y0 - 1000*(a))
         
             cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
+    #        images.append(img.copy())
+            
     
+    #for image in images:
+    #    cv2.imshow(None,image)
+    #    cv2.waitKey(1000)
     
     return img
 
@@ -71,7 +81,7 @@ def on_mouse_click(event, x, y, flag, param):
         n_clicks += 1
 
 def setcornersbyclicking(img):
-    
+    global CORNER_POINTS
     while n_clicks <= total_clicks-1:
         # displays the image
         cv2.imshow("Click", img)
@@ -98,7 +108,7 @@ def getvideo():
         #    cv2.imwrite(IMAGES_DIR+"webcam-empty-board"+str(frame_count)+".jpg", frame)
         
         try:
-            #setcornersbyclicking(frame)
+            setcornersbyclicking(frame)
             img = dostuff(frame)
             pass
         except:
@@ -201,15 +211,24 @@ def transform(img):
     # get the original four corners via template matching
     #tlc,trc,blc,brc = getcornerpts(img)
     tlc,trc,blc,brc = CORNER_POINTS
+    print("corner_tlc is "+str(tlc))
+    print("corner_trc is "+str(trc))
+    print("corner_blc is "+str(blc))
+    print("corner_brc is "+str(brc))
     origin_x = tlc[0]
     origin_y = tlc[1]
     bottom_y = blc[1]
     right_x = trc[0]
     pts1 = np.float32([tlc,trc,blc,brc])
+    #todo make this more robust
     new_tlc = tlc
     new_trc = [right_x,origin_y]
     new_blc = [origin_x,bottom_y]
     new_brc = [right_x,bottom_y]
+    print("new_tlc is "+str(new_tlc))
+    print("new_trc is "+str(new_trc))
+    print("new_blc is "+str(new_blc))
+    print("new_brc is "+str(new_brc))
     pts2 = np.float32([new_tlc,new_trc,new_blc,new_brc])
     #pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
     #pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
