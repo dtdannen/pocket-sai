@@ -16,6 +16,75 @@ INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
 
+total_clicks = 4
+n_clicks = 0
+points = []
+
+def dostuff(img):
+    #img,tlc,trc,blc,brc = transform(img.copy())
+    # draw the boarders of the board's playing field
+#     cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
+#     cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
+#     cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
+#     cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
+    #img = drawintersections(img)
+    #img = cv2.medianBlur(img,5)
+    # crop image
+    #crop_x = trc[0] - tlc[0]
+    #crop_y = blc[1] - tlc[1]
+    #img = img[tlc[0]:tlc[1],crop_x:crop_y]
+    
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray,50,150,apertureSize = 3)
+#     plt.subplot(121),plt.imshow(img,cmap = 'gray')
+#     plt.title('Original Image'), plt.xticks([]), plt.yticks([])
+#     plt.subplot(122),plt.imshow(edges,cmap = 'gray')
+#     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
+#     plt.show()
+    
+    lines = cv2.HoughLines(edges,1,np.pi/180,190)
+    print("found "+str(len(lines))+" lines")
+    for line in lines:
+        for rho,theta in line:
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a*rho
+            y0 = b*rho
+            x1 = int(x0 + 1000*(-b))
+            y1 = int(y0 + 1000*(a))
+            x2 = int(x0 - 1000*(-b))
+            y2 = int(y0 - 1000*(a))
+        
+            cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
+    
+    
+    return img
+
+def on_mouse_click(event, x, y, flag, param):
+    '''
+    used to record points from clicking
+    '''
+    global n_clicks, points
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print 'Point %s captured: (%s,%s)' % (n_clicks+1,x,y)
+        points.append([x, y])
+        n_clicks += 1
+
+def setcornersbyclicking(img):
+    
+    while n_clicks <= total_clicks-1:
+        # displays the image
+        cv2.imshow("Click", img)
+        #cv.ShowImage("Click", cvimage)
+        #calls the callback function "on_mouse_click'when mouse is clicked inside window
+        cv2.setMouseCallback("Click", on_mouse_click, param=1)
+        #cv.SetMouseCallback("Click", on_mouse_click, param=1)
+        #cv.WaitKey(1000)
+        cv2.waitKey(1000)
+
+    CORNER_POINTS = points
+    #return points
+
 def getvideo():
     frames_to_save = 2
     cv2.namedWindow("preview")
@@ -23,19 +92,15 @@ def getvideo():
     
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
-        
+        img = frame
         # now perform pattern matching to get corners
         #for frame_count in range(frames_to_save):
         #    cv2.imwrite(IMAGES_DIR+"webcam-empty-board"+str(frame_count)+".jpg", frame)
         
         try:
-            img,new_tlc,new_trc,new_blc,new_brc = transform(frame.copy())
-            # draw the boarders of the board's playing field
-            cv2.line(img,tuple(new_tlc),tuple(new_trc),(0,255,0),2)
-            cv2.line(img,tuple(new_trc),tuple(new_brc),(0,255,0),2)
-            cv2.line(img,tuple(new_brc),tuple(new_blc),(0,255,0),2)
-            cv2.line(img,tuple(new_blc),tuple(new_tlc),(0,255,0),2)
-            img = drawintersections(img)
+            #setcornersbyclicking(frame)
+            img = dostuff(frame)
+            pass
         except:
             img = frame
         
@@ -46,18 +111,13 @@ def getvideo():
         cv2.imshow("preview", img)
         rval, frame = vc.read()
         try:
-            img,new_tlc,new_trc,new_blc,new_brc = transform(frame.copy())
-            # draw the boarders of the board's playing field
-            cv2.line(img,tuple(new_tlc),tuple(new_trc),(0,255,0),2)
-            cv2.line(img,tuple(new_trc),tuple(new_brc),(0,255,0),2)
-            cv2.line(img,tuple(new_brc),tuple(new_blc),(0,255,0),2)
-            cv2.line(img,tuple(new_blc),tuple(new_tlc),(0,255,0),2)
-            img = drawintersections(img)
+            img = dostuff(frame)
+            pass
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
             img = frame
         
-        key = cv2.waitKey(10000)
+        key = cv2.waitKey(20)
         if key == 27: # exit on ESC
             break
     cv2.destroyWindow("preview")
