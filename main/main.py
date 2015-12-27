@@ -22,6 +22,8 @@ INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
 
+LINES = []
+
 total_clicks = 4
 n_clicks = 0
 points = []
@@ -82,7 +84,7 @@ def dostuff(img):
 #     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
 #     plt.show()
     #images = []
-    lines = cv2.HoughLines(edges,1,np.pi/180,170)
+    lines = cv2.HoughLines(edges,1,np.pi/180,150)
     #print("found "+str(len(lines))+" lines")
     lines_pts = []
     for line in lines:
@@ -114,15 +116,15 @@ def dostuff(img):
     # now filter lines that are too too close to one another (duplicates)
     # for each line, find any where the end points are within a distance of 5 from each other
 #     too_close_dist = 5
-#     min_lines = []
-#     for line in lines_pts:
-#         min_lines.append(line)
-#         lines_pts.remove(line)
-#         for other_line in lines_pts:
-            #pass
+#     lines_a = [pt for pt in copy.copy(lines_pts)]
+#     lines_b = [pt for pt in copy.copy(lines_pts)]
+#     for i in range(len(lines_a)):
+#         for j in range(len(lines_b)):
+#             if i == j:
+#                 continue
+#             
             
     # find all intersections
-    lines_left_to_check = copy.copy(lines_pts)
     lines_a = [pt for pt in copy.copy(lines_pts)]
     lines_b = [pt for pt in copy.copy(lines_pts)]
     for i in range(len(lines_a)):
@@ -133,9 +135,9 @@ def dostuff(img):
             result = seg_intersect(img, lineA[0],lineA[1],lineB[0],lineB[1])
             if result is not None: 
                 cv2.circle(img,tuple([int(result[0]),int(result[1])]),2,(255,255,255))
-            if result is not None: print(str(result))
-        print("***** NEXT LINE *****")
-    print("-=-=-=-=-DONE-=-=-=-=-=\n\n")
+            #if result is not None: print(str(result))
+        #print("***** NEXT LINE *****")
+    #print("-=-=-=-=-DONE-=-=-=-=-=\n\n")
         
     #        images.append(img.copy())
             
