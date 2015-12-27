@@ -33,8 +33,9 @@ class OGSBot():
         '''
         Constructor
         '''
+        self.delay = 0.3
         
-    def go(self):
+    def open_chrome(self):
         # get current image
         img = ImageGrab.grab()
         img_h = img.height
@@ -79,16 +80,17 @@ class OGSBot():
         plt.subplot(111),plt.imshow(img_rgb),plt.title('ScreenShot')
         plt.show()
         
-        
-        time.sleep(1)
+        time.sleep(self.delay)
         win32api.SetCursorPos((loc[0],img_h - loc[1]))
         print("about to click")
-        time.sleep(1)
+        time.sleep(self.delay)
         click(loc[0], loc[1])
-        #plt.subplot(111),plt.imshow(img),plt.title('ImageGrab.grab() contents')
-        #plt.subplot(122),plt.imshow(dst),plt.title('Output')
-        #plt.show()
-        pass
+        
+        
+        
+        
+    def go(self):
+        self.open_chrome_new_tab()
 
 
 def main():

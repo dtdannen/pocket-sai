@@ -8,6 +8,11 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 import time
+import cmath
+import copy
+import sys
+import math
+import traceback
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
@@ -21,24 +26,54 @@ total_clicks = 4
 n_clicks = 0
 points = []
 
+
+
+def dist(x1,y1,x2,y2):
+    return cmath.sqrt((pow(abs(x1-x2),2) + pow(abs(y1-y2),2)))
+
+def perp(a):
+    b = np.empty_like(a)
+    b[0] = -a[1]
+    b[1] = a[0]
+    return b
+
+def seg_intersect(img, a1,a2, b1,b2) :
+    da = a2-a1
+    db = b2-b1
+    dp = a1-b1
+    dap = perp(da)
+    denom = np.dot( dap, db)
+    num = np.dot( dap, dp )
+    result = None
+    if denom.astype(float) != 0:
+        result = (num / denom.astype(float))*db + b1
+    
+    # do some nice boundary checking
+    if result is not None:
+        if math.isnan(result[0]) or math.isnan(result[1]) or math.isinf(result[0]) or math.isinf(result[0]) or result[0] < 0 or result[1] < 0 or result[0] > img.shape[1] or result[1] > img.shape[0]:
+            return None 
+    return result
+
+
 def dostuff(img):
     img,tlc,trc,blc,brc = transform(img.copy())
     #draw the boarders of the board's playing field
-    cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
-    cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
-    cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
-    cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
+    #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
+    #cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
+    #cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
+    #cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
     #img = drawintersections(img)
     #img = cv2.medianBlur(img,5)
     
     # crop image
-    buffer = 10
-    x1 = tlc[0] - buffer
-    x2 = trc[0] + buffer
-    y1 = tlc[1] - buffer
-    y2 = blc[1] + buffer
-    img = img[y1:y2,x1:x2]
-    
+    if len(CORNER_POINTS) == 4:
+        buffer = 10
+        x1 = tlc[0] - buffer
+        x2 = trc[0] + buffer
+        y1 = tlc[1] - buffer
+        y2 = blc[1] + buffer
+        img = img[y1:y2,x1:x2]
+
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray,50,150,apertureSize = 3)
 #     plt.subplot(121),plt.imshow(img,cmap = 'gray')
@@ -47,8 +82,9 @@ def dostuff(img):
 #     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
 #     plt.show()
     #images = []
-    lines = cv2.HoughLines(edges,1,np.pi/180,190)
+    lines = cv2.HoughLines(edges,1,np.pi/180,170)
     #print("found "+str(len(lines))+" lines")
+    lines_pts = []
     for line in lines:
         for rho,theta in line:
             a = np.cos(theta)
@@ -59,8 +95,48 @@ def dostuff(img):
             y1 = int(y0 + 1000*(a))
             x2 = int(x0 - 1000*(-b))
             y2 = int(y0 - 1000*(a))
-        
+            
+            # an attempt to keep all lines within the image: doesn't work as it messes with slope
+#             keep_in_width = lambda x: img.shape[1] - 10 if x >= img.shape[1] else x
+#             keep_in_height = lambda x: img.shape[0] - 10 if x >= img.shape[0] else x
+#             keep_in_origin = lambda x: 10 if x < 0 else x
+#             check_x = lambda x: keep_in_origin(keep_in_width(x))
+#             check_y = lambda x: keep_in_origin(keep_in_height(x))
+#             x1 = check_x(x1)
+#             y1 = check_y(y1)
+#             x2 = check_x(x2)
+#             y2 = check_y(y2)
+             
+            lines_pts.append([np.array([x1,y1]),np.array([x2,y2])])
             cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
+            
+            
+    # now filter lines that are too too close to one another (duplicates)
+    # for each line, find any where the end points are within a distance of 5 from each other
+#     too_close_dist = 5
+#     min_lines = []
+#     for line in lines_pts:
+#         min_lines.append(line)
+#         lines_pts.remove(line)
+#         for other_line in lines_pts:
+            #pass
+            
+    # find all intersections
+    lines_left_to_check = copy.copy(lines_pts)
+    lines_a = [pt for pt in copy.copy(lines_pts)]
+    lines_b = [pt for pt in copy.copy(lines_pts)]
+    for i in range(len(lines_a)):
+        for j in range(len(lines_b)):
+            if i == j:
+                continue
+            lineA, lineB = lines_a[i], lines_b[j]
+            result = seg_intersect(img, lineA[0],lineA[1],lineB[0],lineB[1])
+            if result is not None: 
+                cv2.circle(img,tuple([int(result[0]),int(result[1])]),2,(255,255,255))
+            if result is not None: print(str(result))
+        print("***** NEXT LINE *****")
+    print("-=-=-=-=-DONE-=-=-=-=-=\n\n")
+        
     #        images.append(img.copy())
             
     
@@ -113,6 +189,8 @@ def getvideo():
             pass
         except:
             img = frame
+            print "Unexpected error:", sys.exc_info()[0]
+            traceback.print_exc()
         
     else:
         rval = False
@@ -126,8 +204,9 @@ def getvideo():
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
             img = frame
+            print "Unexpected error:", sys.exc_info()[0]
         
-        key = cv2.waitKey(20)
+        key = cv2.waitKey(200)
         if key == 27: # exit on ESC
             break
     cv2.destroyWindow("preview")
@@ -189,10 +268,10 @@ def getcornerpts(main_img):
     tlc_loc = np.where( tlc_res >= THRESHOLD)
     tlc_loc_pt = zip(*tlc_loc[::-1])[0]
     tlc_loc_pt_middle = tuple([tlc_loc_pt[0] + tlc_w_offset,tlc_loc_pt[1] + tlc_h_offset])
-    print(str(tlc_loc_pt))
-    print("new point = "+str(tlc_loc_pt_middle))
+    #print(str(tlc_loc_pt))
+    #print("new point = "+str(tlc_loc_pt_middle))
     trc_loc = np.where( trc_res >= THRESHOLD)
-    print(str(trc_loc))
+    #print(str(trc_loc))
     trc_loc_pt = zip(*trc_loc[::-1])[0]
     trc_loc_pt_middle = tuple([trc_loc_pt[0] + trc_w_offset,trc_loc_pt[1] + trc_h_offset])
     blc_loc = np.where( blc_res >= THRESHOLD)
@@ -211,10 +290,10 @@ def transform(img):
     # get the original four corners via template matching
     #tlc,trc,blc,brc = getcornerpts(img)
     tlc,trc,blc,brc = CORNER_POINTS
-    print("corner_tlc is "+str(tlc))
-    print("corner_trc is "+str(trc))
-    print("corner_blc is "+str(blc))
-    print("corner_brc is "+str(brc))
+    #print("corner_tlc is "+str(tlc))
+    #print("corner_trc is "+str(trc))
+    #print("corner_blc is "+str(blc))
+    #print("corner_brc is "+str(brc))
     origin_x = tlc[0]
     origin_y = tlc[1]
     bottom_y = blc[1]
@@ -225,10 +304,10 @@ def transform(img):
     new_trc = [right_x,origin_y]
     new_blc = [origin_x,bottom_y]
     new_brc = [right_x,bottom_y]
-    print("new_tlc is "+str(new_tlc))
-    print("new_trc is "+str(new_trc))
-    print("new_blc is "+str(new_blc))
-    print("new_brc is "+str(new_brc))
+    #print("new_tlc is "+str(new_tlc))
+    #print("new_trc is "+str(new_trc))
+    #print("new_blc is "+str(new_blc))
+    #print("new_brc is "+str(new_brc))
     pts2 = np.float32([new_tlc,new_trc,new_blc,new_brc])
     #pts1 = np.float32([[248,757],[1309,741],[84,1877],[1449,1886]])
     #pts2 = np.float32([[248,757],[1309,757],[248,1877],[1309,1877]])
