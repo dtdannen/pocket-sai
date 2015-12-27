@@ -22,7 +22,7 @@ INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
 
-LINES = []
+INTERSECTIONS = []
 
 total_clicks = 4
 n_clicks = 0
@@ -31,7 +31,11 @@ points = []
 
 
 def dist(x1,y1,x2,y2):
-    return cmath.sqrt((pow(abs(x1-x2),2) + pow(abs(y1-y2),2)))
+    #print("abs(x1-x2) =" + str(abs(x1-x2)))
+    #print("abs(y1-y2) =" + str(abs(y1-y2)))
+    result = cmath.sqrt((pow(abs(x1-x2),2) + pow(abs(y1-y2),2)))
+    #print("result is "+str(result.real)) 
+    return result.real
 
 def perp(a):
     b = np.empty_like(a)
@@ -58,14 +62,9 @@ def seg_intersect(img, a1,a2, b1,b2) :
 
 
 def dostuff(img):
+    global INTERSECTIONS
+    
     img,tlc,trc,blc,brc = transform(img.copy())
-    #draw the boarders of the board's playing field
-    #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
-    #cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
-    #cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
-    #cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
-    #img = drawintersections(img)
-    #img = cv2.medianBlur(img,5)
     
     # crop image
     if len(CORNER_POINTS) == 4:
@@ -75,7 +74,20 @@ def dostuff(img):
         y1 = tlc[1] - buffer
         y2 = blc[1] + buffer
         img = img[y1:y2,x1:x2]
-
+    
+    if len(INTERSECTIONS) >= 361:
+        return img
+    
+    
+    #draw the boarders of the board's playing field
+    #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
+    #cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
+    #cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
+    #cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
+    #img = drawintersections(img)
+    #img = cv2.medianBlur(img,5)
+    
+    
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray,50,150,apertureSize = 3)
 #     plt.subplot(121),plt.imshow(img,cmap = 'gray')
@@ -127,14 +139,25 @@ def dostuff(img):
     # find all intersections
     lines_a = [pt for pt in copy.copy(lines_pts)]
     lines_b = [pt for pt in copy.copy(lines_pts)]
+    too_close_dist = 12
     for i in range(len(lines_a)):
         for j in range(len(lines_b)):
             if i == j:
                 continue
             lineA, lineB = lines_a[i], lines_b[j]
             result = seg_intersect(img, lineA[0],lineA[1],lineB[0],lineB[1])
-            if result is not None: 
-                cv2.circle(img,tuple([int(result[0]),int(result[1])]),2,(255,255,255))
+            if result is not None:
+                # now compare against all intersections and make sure this one isn't a duplicate
+                curr_i = [int(result[0]),int(result[1])]
+                duplicate = False
+                for prev_i in INTERSECTIONS:
+                    if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < too_close_dist:
+                        duplicate = True
+                if not duplicate:
+                    INTERSECTIONS.append([int(result[0]),int(result[1])])
+    
+    print("There are "+str(len(lines_pts))+" lines")
+    print("There are "+str(len(INTERSECTIONS))+" intersections")
             #if result is not None: print(str(result))
         #print("***** NEXT LINE *****")
     #print("-=-=-=-=-DONE-=-=-=-=-=\n\n")
@@ -202,6 +225,8 @@ def getvideo():
         rval, frame = vc.read()
         try:
             img = dostuff(frame)
+            for inter in INTERSECTIONS:
+                cv2.circle(img,tuple([int(inter[0]),int(inter[1])]),2,(0,0,255))
             pass
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
