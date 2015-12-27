@@ -13,7 +13,9 @@ import copy
 import sys
 import math
 import traceback
+from cv2 import pyrUp
 
+ZOOM_ON = False
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
 CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
@@ -22,7 +24,10 @@ INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
 
-INTERSECTIONS = []
+INTERSECTIONS = [] # coordinates of intersections on the empty board
+STONES = [] # coordinates of stones on the board
+
+MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
 
 total_clicks = 4
 n_clicks = 0
@@ -60,86 +65,35 @@ def seg_intersect(img, a1,a2, b1,b2) :
             return None 
     return result
 
-
-def dostuff(img):
-    global INTERSECTIONS
+def find_intersections(img):
+    global INTERSECTIONS, MIN_DIST
     
-    img,tlc,trc,blc,brc = transform(img.copy())
-    
-    # crop image
-    if len(CORNER_POINTS) == 4:
-        buffer = 10
-        x1 = tlc[0] - buffer
-        x2 = trc[0] + buffer
-        y1 = tlc[1] - buffer
-        y2 = blc[1] + buffer
-        img = img[y1:y2,x1:x2]
-    
-    if len(INTERSECTIONS) >= 361:
+    if len(INTERSECTIONS) == 361:
         return img
-    
-    
-    #draw the boarders of the board's playing field
-    #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
-    #cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
-    #cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
-    #cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
-    #img = drawintersections(img)
-    #img = cv2.medianBlur(img,5)
-    
-    
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray,50,150,apertureSize = 3)
-#     plt.subplot(121),plt.imshow(img,cmap = 'gray')
-#     plt.title('Original Image'), plt.xticks([]), plt.yticks([])
-#     plt.subplot(122),plt.imshow(edges,cmap = 'gray')
-#     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
-#     plt.show()
-    #images = []
-    lines = cv2.HoughLines(edges,1,np.pi/180,150)
-    #print("found "+str(len(lines))+" lines")
-    lines_pts = []
-    for line in lines:
-        for rho,theta in line:
-            a = np.cos(theta)
-            b = np.sin(theta)
-            x0 = a*rho
-            y0 = b*rho
-            x1 = int(x0 + 1000*(-b))
-            y1 = int(y0 + 1000*(a))
-            x2 = int(x0 - 1000*(-b))
-            y2 = int(y0 - 1000*(a))
-            
-            # an attempt to keep all lines within the image: doesn't work as it messes with slope
-#             keep_in_width = lambda x: img.shape[1] - 10 if x >= img.shape[1] else x
-#             keep_in_height = lambda x: img.shape[0] - 10 if x >= img.shape[0] else x
-#             keep_in_origin = lambda x: 10 if x < 0 else x
-#             check_x = lambda x: keep_in_origin(keep_in_width(x))
-#             check_y = lambda x: keep_in_origin(keep_in_height(x))
-#             x1 = check_x(x1)
-#             y1 = check_y(y1)
-#             x2 = check_x(x2)
-#             y2 = check_y(y2)
+    elif len(INTERSECTIONS) > 361:
+        raise Exception("Whoops too many intersections")
+    else:
+        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray,50,150,apertureSize = 3)
+        lines = cv2.HoughLines(edges,1,np.pi/180,150)    
+        lines_pts = []
+        for line in lines:
+            for rho,theta in line:
+                a = np.cos(theta)
+                b = np.sin(theta)
+                x0 = a*rho
+                y0 = b*rho
+                x1 = int(x0 + 1000*(-b))
+                y1 = int(y0 + 1000*(a))
+                x2 = int(x0 - 1000*(-b))
+                y2 = int(y0 - 1000*(a))
              
             lines_pts.append([np.array([x1,y1]),np.array([x2,y2])])
-            cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
+            cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)      
             
-            
-    # now filter lines that are too too close to one another (duplicates)
-    # for each line, find any where the end points are within a distance of 5 from each other
-#     too_close_dist = 5
-#     lines_a = [pt for pt in copy.copy(lines_pts)]
-#     lines_b = [pt for pt in copy.copy(lines_pts)]
-#     for i in range(len(lines_a)):
-#         for j in range(len(lines_b)):
-#             if i == j:
-#                 continue
-#             
-            
-    # find all intersections
+    # find all intersections, while ignoring duplicates
     lines_a = [pt for pt in copy.copy(lines_pts)]
     lines_b = [pt for pt in copy.copy(lines_pts)]
-    too_close_dist = 12
     for i in range(len(lines_a)):
         for j in range(len(lines_b)):
             if i == j:
@@ -151,14 +105,62 @@ def dostuff(img):
                 curr_i = [int(result[0]),int(result[1])]
                 duplicate = False
                 for prev_i in INTERSECTIONS:
-                    if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < too_close_dist:
+                    if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < MIN_DIST:
                         duplicate = True
                 if not duplicate:
-                    INTERSECTIONS.append([int(result[0]),int(result[1])])
+                    INTERSECTIONS.append([int(result[0]),int(result[1])])    
+    return img
+
+def find_stones(img):
+    global STONES
+    img = cv2.medianBlur(img,5)
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+
+    circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,MIN_DIST,
+                                param1=50,param2=30,minRadius=int(MIN_DIST/1.5),maxRadius=int(1.2*MIN_DIST))
     
-    print("There are "+str(len(lines_pts))+" lines")
-    print("There are "+str(len(INTERSECTIONS))+" intersections")
-            #if result is not None: print(str(result))
+    raw_circles = circles
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        STONES = circles
+    return img
+
+def dostuff(img):
+    # transform first
+    img,tlc,trc,blc,brc = transform(img.copy())
+    # crop (so we only look at the board)
+    if len(CORNER_POINTS) == 4:
+        buffer = 10
+        x1 = tlc[0] - buffer
+        x2 = trc[0] + buffer
+        y1 = tlc[1] - buffer
+        y2 = blc[1] + buffer
+        img = img[y1:y2,x1:x2]
+    # find the intersections (only runs unless all intersections have been found)
+    img = find_intersections(img)
+    
+    # locate all stones
+    img = find_stones(img)
+    
+    #draw the boarders of the board's playing field
+    #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
+    #cv2.line(img,tuple(trc),tuple(brc),(0,255,0),2)
+    #cv2.line(img,tuple(brc),tuple(blc),(0,255,0),2)
+    #cv2.line(img,tuple(blc),tuple(tlc),(0,255,0),2)
+    #img = drawintersections(img)
+    #img = cv2.medianBlur(img,5)
+    
+    
+    
+#     plt.subplot(121),plt.imshow(img,cmap = 'gray')
+#     plt.title('Original Image'), plt.xticks([]), plt.yticks([])
+#     plt.subplot(122),plt.imshow(edges,cmap = 'gray')
+#     plt.title('Edge Image'), plt.xticks([]), plt.yticks([])    
+#     plt.show()
+    #images = []
+    
+    #print("found "+str(len(lines))+" lines")
+                #if result is not None: print(str(result))
         #print("***** NEXT LINE *****")
     #print("-=-=-=-=-DONE-=-=-=-=-=\n\n")
         
@@ -204,6 +206,10 @@ def getvideo():
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
         img = frame
+        if ZOOM_ON:
+            display_img = cv2.pyrUp(img)
+        else:
+            display_img = img
         # now perform pattern matching to get corners
         #for frame_count in range(frames_to_save):
         #    cv2.imwrite(IMAGES_DIR+"webcam-empty-board"+str(frame_count)+".jpg", frame)
@@ -211,27 +217,44 @@ def getvideo():
         try:
             setcornersbyclicking(frame)
             img = dostuff(frame)
+            display_img = cv2.pyrUp(img)
             pass
         except:
             img = frame
             print "Unexpected error:", sys.exc_info()[0]
             traceback.print_exc()
+            raise Exception("meh")
         
     else:
         rval = False
     
     while rval:
-        cv2.imshow("preview", img)
+        cv2.imshow("preview", display_img)
         rval, frame = vc.read()
         try:
             img = dostuff(frame)
+            # display intersections
             for inter in INTERSECTIONS:
                 cv2.circle(img,tuple([int(inter[0]),int(inter[1])]),2,(0,0,255))
+            # display circles around stones
+            if len(STONES) > 0:
+                for i in STONES[0,:]:
+                    # draw the outer circle
+                    cv2.circle(img,(i[0],i[1]),i[2],(0,255,0),2)
+                    # draw the center of the circle
+                    cv2.circle(img,(i[0],i[1]),2,(0,0,255),3)
+            # zoom in 
+            if ZOOM_ON:
+                display_img = cv2.pyrUp(img)
+            else:
+                display_img = img
             pass
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
             img = frame
             print "Unexpected error:", sys.exc_info()[0]
+            traceback.print_exc()
+            raise Exception("meh")
         
         key = cv2.waitKey(200)
         if key == 27: # exit on ESC
