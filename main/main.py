@@ -15,8 +15,17 @@ import math
 import traceback
 from cv2 import pyrUp
 
-ZOOM_ON = False
+# config variables
+ZOOM_ON = True
+SAVE_NEG_IMAGES = True
+SAVE_WHITE_STONE_IMAGES = True
+
+# Display variables
+DRAW_LINES = False
+
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
+NEG_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\neg\\'
+POS_WHITE_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\white\\'
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
 CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
 CORNER_POINTS = []#[[139,152],[508,156],[29,432],[634,432]]
@@ -32,7 +41,8 @@ MIN_DIST = 12 # minimum distance between stones and intersections (adjust based 
 total_clicks = 4
 n_clicks = 0
 points = []
-
+curr_white_stone_clicks = 0
+total_white_stone_clicks = 81
 
 
 def dist(x1,y1,x2,y2):
@@ -68,9 +78,9 @@ def seg_intersect(img, a1,a2, b1,b2) :
 def find_intersections(img):
     global INTERSECTIONS, MIN_DIST
     
-    if len(INTERSECTIONS) == 361:
+    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
         return img
-    elif len(INTERSECTIONS) > 361:
+    elif len(INTERSECTIONS) > pow(BOARD_SIZE,2):
         raise Exception("Whoops too many intersections")
     else:
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
@@ -89,7 +99,7 @@ def find_intersections(img):
                 y2 = int(y0 - 1000*(a))
              
             lines_pts.append([np.array([x1,y1]),np.array([x2,y2])])
-            cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)      
+            if DRAW_LINES: cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)      
             
     # find all intersections, while ignoring duplicates
     lines_a = [pt for pt in copy.copy(lines_pts)]
@@ -122,8 +132,60 @@ def find_stones(img):
     raw_circles = circles
     if circles is not None:
         circles = np.uint16(np.around(circles))
-        STONES = circles
+        for circle in circles:
+            circle = np.array(circle[0]).tolist()   
+            if circle not in STONES:
+                STONES.append(circle)
+                print("Just added stone: "+str(circle))
     return img
+
+def crop(img,x1,y1,x2,y2):
+    '''
+    returns a new img from the given image of the square formed from the coordinates
+    '''
+    new_img = img.copy()
+    new_img = new_img[y1:y2,x1:x2]
+    return new_img
+
+def display_avg_color_at_inters(img):
+    # get all pixels in a square around the intersection
+    dist = 12
+    #print("img.shape="+str(img.shape))
+    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+        for inter in INTERSECTIONS:
+            #print("inter is "+str(inter))
+            #if inter[1] < img.shape[0] and inter[0] < img.shape[1]:
+            
+            # get all surrounding pixels
+            x_min = inter[0] - (dist / 2)
+            x_max = inter[0] + (dist / 2)
+            y_min = inter[1] - (dist / 2)
+            y_max = inter[1] + (dist / 2)
+            acc_intensity = 0
+            count = 0
+            #print("img.shape[0]="+str(img.shape[0])+", "+"img.shape[1]="+str(img.shape[1]))
+            x = x_min
+            while x < x_max:
+                y = y_min
+                while y < y_max:
+                    if y < int(img.shape[0]) and x < int(img.shape[1]):
+                        #print("adding pixel for "+str(x)+","+str(y))
+                        pixel = img[y,x]
+                        acc_intensity += (int(pixel[0]) + int(pixel[1]) + int(pixel[2])) / 3 
+                        count += 1
+                    y+=1
+                x+=1
+            avg_for_square = -1
+            if count > 0:
+                avg_for_square = acc_intensity / count
+            txtstr = str(avg_for_square)
+            cv2.rectangle(img,tuple([int(inter[0]-(dist / 2)),int(inter[1]-(dist / 2))]),tuple([int(inter[0]+(dist / 2)),int(inter[1]+(dist / 2))]),(0,220,0),1)
+            cv2.putText(img,txtstr,tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+            #cv2.imshow("nothing",img)
+            #cv2.waitKey(1000)
+    
+    #print("the value at "+str(type(img)))
+
 
 def dostuff(img):
     # transform first
@@ -135,12 +197,15 @@ def dostuff(img):
         x2 = trc[0] + buffer
         y1 = tlc[1] - buffer
         y2 = blc[1] + buffer
-        img = img[y1:y2,x1:x2]
+        img = crop(img,x1,y1,x2,y2)
+        
     # find the intersections (only runs unless all intersections have been found)
     img = find_intersections(img)
     
+    display_avg_color_at_inters(img)
+    #cv2.CascadeClassifier()
     # locate all stones
-    img = find_stones(img)
+    #img = find_stones(img)
     
     #draw the boarders of the board's playing field
     #cv2.line(img,tuple(tlc),tuple(trc),(0,255,0),2)
@@ -198,10 +263,79 @@ def setcornersbyclicking(img):
     CORNER_POINTS = points
     #return points
 
+def save_all_interesections_as_white_stones(img):
+    '''
+    After the intersections have been properly identified, this will crop the image into
+    361 individual images, one for each intersection.
+    '''
+    w, h = 18,18
+    count = 0
+    global SAVE_NEG_IMAGES, INTERSECTIONS 
+    if SAVE_WHITE_STONE_IMAGES:
+        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+            for inter in INTERSECTIONS:
+                x1 = inter[0] - (w / 2)
+                y1 = inter[1] - (h / 2)
+                x2 = inter[0] + (w / 2)
+                y2 = inter[1] + (h / 2)
+                cv2.imwrite(POS_WHITE_TRAINING_IMAGES_DIR+"white_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
+                count+=1
+            print("Just produced "+ str(count)+" white stone images")
+            SAVE_WHITE_STONE_IMAGES = False
+
+
+def save_all_intersections_as_neg_images(img):
+    '''
+    After the intersections have been properly identified, this will crop the image into
+    361 individual images, one for each intersection.
+    '''
+    w, h = 18,18
+    count = 0
+    global SAVE_NEG_IMAGES, INTERSECTIONS 
+    if SAVE_NEG_IMAGES:
+        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+            for inter in INTERSECTIONS:
+                x1 = inter[0] - (w / 2)
+                y1 = inter[1] - (h / 2)
+                x2 = inter[0] + (w / 2)
+                y2 = inter[1] + (h / 2)
+                cv2.imwrite(NEG_TRAINING_IMAGES_DIR+"neg_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
+                count+=1
+            print("Just produced "+ str(count)+" negative images")
+            SAVE_NEG_IMAGES = False
+
+def save_all_intersections_as_white_stones(img):
+    '''
+    After the intersections have been properly identified, this will crop the image into
+    361 individual images, one for each intersection.
+    '''
+    w, h = 14,14
+    count = 0
+    global SAVE_WHITE_STONE_IMAGES, INTERSECTIONS 
+    if SAVE_WHITE_STONE_IMAGES:
+        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+            for inter in INTERSECTIONS:
+                x1 = inter[0] - (w / 2)
+                y1 = inter[1] - (h / 2)
+                x2 = inter[0] + (w / 2)
+                y2 = inter[1] + (h / 2)
+                cv2.imwrite(POS_WHITE_TRAINING_IMAGES_DIR+"white_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
+                count+=1
+            print("Just produced "+ str(count)+" white stone images")
+            SAVE_WHITE_STONE_IMAGES = False     
+                     
 def getvideo():
     frames_to_save = 2
     cv2.namedWindow("preview")
     vc = cv2.VideoCapture(1)
+    
+    # complicated, hacky logic, just ignore - only used to collect training data
+    will_save_white_stone_images = False
+    global SAVE_WHITE_STONE_IMAGES
+    if SAVE_WHITE_STONE_IMAGES:
+        will_save_white_stone_images = True
+    SAVE_WHITE_STONE_IMAGES = False
+    # end hacky logic
     
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
@@ -233,16 +367,24 @@ def getvideo():
         rval, frame = vc.read()
         try:
             img = dostuff(frame)
-            # display intersections
-            for inter in INTERSECTIONS:
-                cv2.circle(img,tuple([int(inter[0]),int(inter[1])]),2,(0,0,255))
+                    
+            save_all_intersections_as_neg_images(img)
+            save_all_intersections_as_white_stones(img)
+            
             # display circles around stones
             if len(STONES) > 0:
-                for i in STONES[0,:]:
+                for i in STONES:
                     # draw the outer circle
+                    #cir = 
+                    print("i is "+str(i)+" and has type "+str(type(i)))
                     cv2.circle(img,(i[0],i[1]),i[2],(0,255,0),2)
                     # draw the center of the circle
                     cv2.circle(img,(i[0],i[1]),2,(0,0,255),3)
+            
+            # display intersections
+            #for inter in INTERSECTIONS:
+            #    cv2.rectangle(img,tuple([int(inter[0]-2),int(inter[1]-2)]),tuple([int(inter[0]+2),int(inter[1]+2)]),(0,0,255),1)
+        
             # zoom in 
             if ZOOM_ON:
                 display_img = cv2.pyrUp(img)
@@ -256,9 +398,15 @@ def getvideo():
             traceback.print_exc()
             raise Exception("meh")
         
-        key = cv2.waitKey(200)
+        key = cv2.waitKey(1000)
         if key == 27: # exit on ESC
             break
+        elif key == ord('w'):
+            print("just pressed w")
+            if will_save_white_stone_images:
+                # this will trigger collection of white stone images
+                SAVE_WHITE_STONE_IMAGES = True
+            
     cv2.destroyWindow("preview")
 
 def load_stone_images():
