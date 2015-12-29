@@ -29,6 +29,7 @@ POS_WHITE_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\Raspbe
 STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
 CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
 CORNER_POINTS = []#[[139,152],[508,156],[29,432],[634,432]]
+PERSPECTIVE_CORNER_POINTS = []
 INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
@@ -44,6 +45,30 @@ points = []
 curr_white_stone_clicks = 0
 total_white_stone_clicks = 81
 
+# dictionary where the key is an intersection and the value is the go board index (i.e. J5)
+LABELS = {}
+
+def sort_intersections():
+    global INTERSECTIONS
+    global LABELS
+    if len(PERSPECTIVE_CORNER_POINTS) == 4 and len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+        tlc,trc,blc,brc = PERSPECTIVE_CORNER_POINTS
+        tlc_inter, trc_inter, blc_inter, brc_inter = get_closest_inter(tlc),get_closest_inter(trc),get_closest_inter(blc),get_closest_inter(brc)
+        LABELS['A1']=tlc_inter
+        LABELS['A19']=trc_inter
+        LABELS['T1']=blc_inter
+        LABELS['T19']=brc_inter
+
+def get_closest_inter(pt):
+    global INTERSECTIONS
+    min_d = 1000
+    min_inter = None
+    for inter in INTERSECTIONS:
+        curr_dist = dist(pt[0],pt[1],inter[0],inter[1]) 
+        if curr_dist < min_d:
+            min_inter = inter
+            min_d = curr_dist
+    return min_inter
 
 def dist(x1,y1,x2,y2):
     #print("abs(x1-x2) =" + str(abs(x1-x2)))
@@ -179,8 +204,8 @@ def display_avg_color_at_inters(img):
             if count > 0:
                 avg_for_square = acc_intensity / count
             txtstr = str(avg_for_square)
-            cv2.rectangle(img,tuple([int(inter[0]-(dist / 2)),int(inter[1]-(dist / 2))]),tuple([int(inter[0]+(dist / 2)),int(inter[1]+(dist / 2))]),(0,220,0),1)
-            cv2.putText(img,txtstr,tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+            #cv2.rectangle(img,tuple([int(inter[0]-(dist / 2)),int(inter[1]-(dist / 2))]),tuple([int(inter[0]+(dist / 2)),int(inter[1]+(dist / 2))]),(0,220,0),1)
+            #cv2.putText(img,txtstr,tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
             #cv2.imshow("nothing",img)
             #cv2.waitKey(1000)
     
@@ -190,6 +215,7 @@ def display_avg_color_at_inters(img):
 def dostuff(img):
     # transform first
     img,tlc,trc,blc,brc = transform(img.copy())
+    
     # crop (so we only look at the board)
     if len(CORNER_POINTS) == 4:
         buffer = 10
@@ -198,6 +224,11 @@ def dostuff(img):
         y1 = tlc[1] - buffer
         y2 = blc[1] + buffer
         img = crop(img,x1,y1,x2,y2)
+        
+        h,w = img.shape[0], img.shape[1]
+        
+    global PERSPECTIVE_CORNER_POINTS
+    PERSPECTIVE_CORNER_POINTS = [[buffer,buffer],[w-buffer,buffer],[buffer,h-buffer],[w-buffer,h-buffer]]
         
     # find the intersections (only runs unless all intersections have been found)
     img = find_intersections(img)
@@ -382,9 +413,24 @@ def getvideo():
                     cv2.circle(img,(i[0],i[1]),2,(0,0,255),3)
             
             # display intersections
-            #for inter in INTERSECTIONS:
-            #    cv2.rectangle(img,tuple([int(inter[0]-2),int(inter[1]-2)]),tuple([int(inter[0]+2),int(inter[1]+2)]),(0,0,255),1)
-        
+#             letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T']
+#             labels = []
+#             for num in range(1,20):
+#                 for letter in letters:
+#                     labels.append(letter+str(num))
+#             print(str(labels))
+            sort_intersections()
+            i = 0
+            for inter in INTERSECTIONS:
+                cv2.rectangle(img,tuple([int(inter[0]-1),int(inter[1]-1)]),tuple([int(inter[0]+1),int(inter[1]+1)]),(0,0,255),1)
+                #cv2.putText(img,labels[i],tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+                i+=1
+            global LABELS
+            print("LABELS is "+str(LABELS))
+            for label,inter in LABELS.items():
+                cv2.rectangle(img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
+                cv2.putText(img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+            
             # zoom in 
             if ZOOM_ON:
                 display_img = cv2.pyrUp(img)
