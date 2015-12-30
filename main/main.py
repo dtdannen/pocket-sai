@@ -7,6 +7,7 @@ Created on Dec 10, 2015
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.pyplot import ion
 import time
 import cmath
 import copy
@@ -21,7 +22,7 @@ SAVE_NEG_IMAGES = True
 SAVE_WHITE_STONE_IMAGES = True
 
 # Display variables
-DRAW_LINES = False
+DRAW_LINES = True
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 NEG_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\neg\\'
@@ -47,6 +48,8 @@ total_white_stone_clicks = 81
 
 # dictionary where the key is an intersection and the value is the go board index (i.e. J5)
 LABELS = {}
+
+MOST_RECENT_IMG = None
 
 def sort_intersections():
     global INTERSECTIONS
@@ -109,6 +112,7 @@ def find_intersections(img):
         raise Exception("Whoops too many intersections")
     else:
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        #cv2.imshow("gray", gray)
         edges = cv2.Canny(gray,50,150,apertureSize = 3)
         lines = cv2.HoughLines(edges,1,np.pi/180,150)    
         lines_pts = []
@@ -204,8 +208,8 @@ def display_avg_color_at_inters(img):
             if count > 0:
                 avg_for_square = acc_intensity / count
             txtstr = str(avg_for_square)
-            #cv2.rectangle(img,tuple([int(inter[0]-(dist / 2)),int(inter[1]-(dist / 2))]),tuple([int(inter[0]+(dist / 2)),int(inter[1]+(dist / 2))]),(0,220,0),1)
-            #cv2.putText(img,txtstr,tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+            cv2.rectangle(img,tuple([int(inter[0]-(dist / 2)),int(inter[1]-(dist / 2))]),tuple([int(inter[0]+(dist / 2)),int(inter[1]+(dist / 2))]),(0,220,0),1)
+            cv2.putText(img,txtstr,tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
             #cv2.imshow("nothing",img)
             #cv2.waitKey(1000)
     
@@ -354,11 +358,45 @@ def save_all_intersections_as_white_stones(img):
                 count+=1
             print("Just produced "+ str(count)+" white stone images")
             SAVE_WHITE_STONE_IMAGES = False     
-                     
+
+def mouseclick_show_histogram(event, x, y, flag, param):
+    '''
+    used to record points from clicking
+    '''
+    if event == cv2.EVENT_LBUTTONDOWN:
+        global MOST_RECENT_IMG
+        #print("eventchecks out")
+        inter = get_closest_inter([x,y])
+        # get image around inter
+        dist = 6
+        x1 = inter[0] - (dist / 2)
+        y1 = inter[1] - (dist / 2)
+        x2 = inter[0] + (dist / 2)
+        y2 = inter[1] + (dist / 2)
+                 
+        img = crop(MOST_RECENT_IMG,x1,y1,x2,y2)
+        #print("just cropped img")
+        
+        color = ('b','g','r')
+        
+        for i,col in enumerate(color):
+            histr = cv2.calcHist([img],[i],None,[256],[0,256])
+            plt.plot(histr,color = col)
+            plt.xlim([0,256])
+            plt.ylim([0,25])
+        plt.savefig('../histograms/inter_'+str(inter[0])+"_"+str(inter[1])+'_'+str(time.strftime("%H_%M_%S", time.gmtime()))+'.png', bbox_inches='tight')
+        plt.close()
+        
+#         plt.hist(img.ravel(),256,[0,256])
+#         plt.show()
+        #print("just showed it")
+                    
 def getvideo():
     frames_to_save = 2
     cv2.namedWindow("preview")
     vc = cv2.VideoCapture(1)
+    cv2.setMouseCallback("preview", mouseclick_show_histogram, param=1)
+    
     
     # complicated, hacky logic, just ignore - only used to collect training data
     will_save_white_stone_images = False
@@ -394,11 +432,12 @@ def getvideo():
         rval = False
     
     while rval:
+        global MOST_RECENT_IMG
         cv2.imshow("preview", display_img)
         rval, frame = vc.read()
         try:
             img = dostuff(frame)
-                    
+            MOST_RECENT_IMG = img        
             save_all_intersections_as_neg_images(img)
             save_all_intersections_as_white_stones(img)
             
@@ -422,11 +461,11 @@ def getvideo():
             sort_intersections()
             i = 0
             for inter in INTERSECTIONS:
-                cv2.rectangle(img,tuple([int(inter[0]-1),int(inter[1]-1)]),tuple([int(inter[0]+1),int(inter[1]+1)]),(0,0,255),1)
+                #cv2.rectangle(img,tuple([int(inter[0]-1),int(inter[1]-1)]),tuple([int(inter[0]+1),int(inter[1]+1)]),(0,0,255),1)
                 #cv2.putText(img,labels[i],tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
                 i+=1
             global LABELS
-            print("LABELS is "+str(LABELS))
+            #print("LABELS is "+str(LABELS))
             for label,inter in LABELS.items():
                 cv2.rectangle(img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
                 cv2.putText(img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
@@ -444,7 +483,7 @@ def getvideo():
             traceback.print_exc()
             raise Exception("meh")
         
-        key = cv2.waitKey(1000)
+        key = cv2.waitKey(20)
         if key == 27: # exit on ESC
             break
         elif key == ord('w'):
