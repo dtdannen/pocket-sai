@@ -15,6 +15,8 @@ import sys
 import math
 import traceback
 from cv2 import pyrUp
+import collections
+
 
 # config variables
 ZOOM_ON = True
@@ -22,7 +24,7 @@ SAVE_NEG_IMAGES = True
 SAVE_WHITE_STONE_IMAGES = True
 
 # Display variables
-DRAW_LINES = True
+DRAW_LINES = False
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 NEG_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\neg\\'
@@ -39,6 +41,9 @@ INTERSECTIONS = [] # coordinates of intersections on the empty board
 STONES = [] # coordinates of stones on the board
 
 MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
+BUFFER = 8
+
+BACKGROUND_IMAGE = None
 
 total_clicks = 4
 n_clicks = 0
@@ -48,6 +53,9 @@ total_white_stone_clicks = 81
 
 # dictionary where the key is an intersection and the value is the go board index (i.e. J5)
 LABELS = {}
+
+NUM_FRAMES = 10
+LAST_FRAMES = None
 
 MOST_RECENT_IMG = None
 
@@ -222,22 +230,22 @@ def dostuff(img):
     
     # crop (so we only look at the board)
     if len(CORNER_POINTS) == 4:
-        buffer = 10
-        x1 = tlc[0] - buffer
-        x2 = trc[0] + buffer
-        y1 = tlc[1] - buffer
-        y2 = blc[1] + buffer
+        global BUFFER
+        x1 = tlc[0] - BUFFER
+        x2 = trc[0] + BUFFER
+        y1 = tlc[1] - BUFFER
+        y2 = blc[1] + BUFFER
         img = crop(img,x1,y1,x2,y2)
         
         h,w = img.shape[0], img.shape[1]
         
     global PERSPECTIVE_CORNER_POINTS
-    PERSPECTIVE_CORNER_POINTS = [[buffer,buffer],[w-buffer,buffer],[buffer,h-buffer],[w-buffer,h-buffer]]
+    PERSPECTIVE_CORNER_POINTS = [[BUFFER,BUFFER],[w-BUFFER,BUFFER],[BUFFER,h-BUFFER],[w-BUFFER,h-BUFFER]]
         
     # find the intersections (only runs unless all intersections have been found)
     img = find_intersections(img)
     
-    display_avg_color_at_inters(img)
+    
     #cv2.CascadeClassifier()
     # locate all stones
     #img = find_stones(img)
@@ -391,36 +399,49 @@ def mouseclick_show_histogram(event, x, y, flag, param):
 #         plt.show()
         #print("just showed it")
                     
-def getvideo():
-    frames_to_save = 2
-    cv2.namedWindow("preview")
-    vc = cv2.VideoCapture(1)
-    cv2.setMouseCallback("preview", mouseclick_show_histogram, param=1)
+def add_img_to_last_frames(img): 
+    global LAST_FRAMES, NUM_FRAMES
     
+    if LAST_FRAMES is None:
+        # initialize LAST_FRAMES
+        starting_frames = []
+        for i in range(NUM_FRAMES):
+            starting_frames.append(img.copy())
+        LAST_FRAMES = collections.deque(starting_frames,NUM_FRAMES)                   
+    else:
+        LAST_FRAMES.appendleft(img)
+
+def get_last_average_img():
+    if LAST_FRAMES is not None:
+        LAST_FRAMES
+
+def getvideo():
+    video_window_name = "Go Board Live Video Stream" 
+    cv2.namedWindow(video_window_name)
+    vc = cv2.VideoCapture(1)
+    cv2.setMouseCallback(video_window_name, mouseclick_show_histogram, param=1)
     
     # complicated, hacky logic, just ignore - only used to collect training data
-    will_save_white_stone_images = False
-    global SAVE_WHITE_STONE_IMAGES
-    if SAVE_WHITE_STONE_IMAGES:
-        will_save_white_stone_images = True
-    SAVE_WHITE_STONE_IMAGES = False
+    #will_save_white_stone_images = False
+    #global SAVE_WHITE_STONE_IMAGES
+    #if SAVE_WHITE_STONE_IMAGES:
+    #    will_save_white_stone_images = True
+    #SAVE_WHITE_STONE_IMAGES = False
     # end hacky logic
     
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
         img = frame
-        if ZOOM_ON:
-            display_img = cv2.pyrUp(img)
-        else:
-            display_img = img
-        # now perform pattern matching to get corners
-        #for frame_count in range(frames_to_save):
-        #    cv2.imwrite(IMAGES_DIR+"webcam-empty-board"+str(frame_count)+".jpg", frame)
-        
         try:
             setcornersbyclicking(frame)
             img = dostuff(frame)
-            display_img = cv2.pyrUp(img)
+            if BACKGROUND_IMAGE is None:
+                #BACKGROUND_IMAGE = cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
+                BACKGROUND_IMAGE = img.copy()
+                #cv2.imshow("background is",BACKGROUND_IMAGE)
+            #fgbg = cv2.createBackgroundSubtractorMOG2()
+            #display_img = cv2.pyrUp(img)
+            display_img = img.copy()
             pass
         except:
             img = frame
@@ -433,23 +454,52 @@ def getvideo():
     
     while rval:
         global MOST_RECENT_IMG
-        cv2.imshow("preview", display_img)
+        cv2.imshow(video_window_name, display_img)
         rval, frame = vc.read()
+        
         try:
             img = dostuff(frame)
-            MOST_RECENT_IMG = img        
+            display_img = img.copy()
+            display_avg_color_at_inters(display_img)
+            MOST_RECENT_IMG = img
+            add_img_to_last_frames(img) 
             save_all_intersections_as_neg_images(img)
             save_all_intersections_as_white_stones(img)
-            
+            global BACKGROUND_IMAGE 
+            if BACKGROUND_IMAGE is not None:
+                #cv2.imshow("new_img is",img.copy())
+                #subtraction_img = BACKGROUND_IMAGE-cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
+                subtraction_img = BACKGROUND_IMAGE-img.copy()
+                #subtraction_img = cv2.fastNlMeansDenoisingColored(subtraction_img,None,10,10,7,21)
+                subtraction_img = cv2.blur(subtraction_img,(7,7))
+                subtraction_img = cv2.cvtColor(subtraction_img,cv2.COLOR_BGR2GRAY)
+                #(thresh, subtraction_img_bw) = cv2.threshold(subtraction_img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+                thresh = 127
+                subtraction_img_bw = cv2.threshold(subtraction_img, thresh, 255, cv2.THRESH_BINARY)[1]
+                #circles = cv2.HoughCircles(subtraction_img,cv2.HOUGH_GRADIENT,1,MIN_DIST,
+                #                param1=50,param2=30,minRadius=int(MIN_DIST/1.5),maxRadius=int(1.2*MIN_DIST))
+                #backtorgb = cv2.cvtColor(subtraction_img,cv2.COLOR_GRAY2RGB)
+                #raw_circles = circles
+                #if circles is not None:
+                #    circles = np.uint16(np.around(circles))
+                #    for circle in circles:
+                #        circle = np.array(circle[0]).tolist()   
+                #        cv2.circle(backtorgb,(circle[0],circle[1]),circle[2],(0,255,0),2)
+                #        # draw the center of the circle
+                #        cv2.circle(backtorgb,(circle[0],circle[1]),2,(0,0,255),3)
+                            
+                #subtraction_img = cv2.fastNlMeansDenoising()
+                #ret,th1 = cv2.threshold(subtraction_img,127,255,cv2.THRESH_BINARY)
+                cv2.imshow("mask",subtraction_img_bw)
             # display circles around stones
             if len(STONES) > 0:
                 for i in STONES:
                     # draw the outer circle
                     #cir = 
                     print("i is "+str(i)+" and has type "+str(type(i)))
-                    cv2.circle(img,(i[0],i[1]),i[2],(0,255,0),2)
+                    cv2.circle(display_img,(i[0],i[1]),i[2],(0,255,0),2)
                     # draw the center of the circle
-                    cv2.circle(img,(i[0],i[1]),2,(0,0,255),3)
+                    cv2.circle(display_img,(i[0],i[1]),2,(0,0,255),3)
             
             # display intersections
 #             letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T']
@@ -467,14 +517,14 @@ def getvideo():
             global LABELS
             #print("LABELS is "+str(LABELS))
             for label,inter in LABELS.items():
-                cv2.rectangle(img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
-                cv2.putText(img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+                cv2.rectangle(display_img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
+                cv2.putText(display_img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(50,50,255))
             
             # zoom in 
-            if ZOOM_ON:
-                display_img = cv2.pyrUp(img)
-            else:
-                display_img = img
+#             if ZOOM_ON:
+#                 display_img = cv2.pyrUp(img)
+#             else:
+#                 display_img = img
             pass
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
@@ -483,15 +533,16 @@ def getvideo():
             traceback.print_exc()
             raise Exception("meh")
         
+      
         key = cv2.waitKey(20)
         if key == 27: # exit on ESC
             break
         elif key == ord('w'):
             print("just pressed w")
-            if will_save_white_stone_images:
-                # this will trigger collection of white stone images
-                SAVE_WHITE_STONE_IMAGES = True
-            
+#             if will_save_white_stone_images:
+#                 # this will trigger collection of white stone images
+#                 SAVE_WHITE_STONE_IMAGES = True
+#             
     cv2.destroyWindow("preview")
 
 def load_stone_images():
