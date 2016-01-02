@@ -36,14 +36,18 @@ PERSPECTIVE_CORNER_POINTS = []
 INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
 THRESHOLD = 0.7
 BOARD_SIZE = 19
-
+FRAMES_CAPTURED = 0
 INTERSECTIONS = [] # coordinates of intersections on the empty board
 STONES = [] # coordinates of stones on the board
 
 MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
 BUFFER = 8
 
+NUM_FRAMES_TO_KEEP = 50
+
 BACKGROUND_IMAGE = None
+
+FRAMES_CAPTURED_THUS_FAR = 0
 
 total_clicks = 4
 n_clicks = 0
@@ -53,6 +57,8 @@ total_white_stone_clicks = 81
 
 # dictionary where the key is an intersection and the value is the go board index (i.e. J5)
 LABELS = {}
+
+INTERSECTION_ACC_INTS = {} # key is str of x,y of coordinate, val is avg intensity of pixels in recetangle of intersection
 
 NUM_FRAMES = 10
 LAST_FRAMES = None
@@ -184,6 +190,33 @@ def crop(img,x1,y1,x2,y2):
     new_img = new_img[y1:y2,x1:x2]
     return new_img
 
+def get_avg_intensity_inter(img,interx,intery):
+    # get all surrounding pixels
+    dist = 12
+    x_min = interx - (dist / 2)
+    x_max = interx + (dist / 2)
+    y_min = intery - (dist / 2)
+    y_max = intery + (dist / 2)
+    acc_intensity = 0
+    count = 0
+    #print("img.shape[0]="+str(img.shape[0])+", "+"img.shape[1]="+str(img.shape[1]))
+    x = x_min
+    while x < x_max:
+        y = y_min
+        while y < y_max:
+            if y < int(img.shape[0]) and x < int(img.shape[1]):
+                #print("adding pixel for "+str(x)+","+str(y))
+                pixel = img[y,x]
+                acc_intensity += (int(pixel[0]) + int(pixel[1]) + int(pixel[2])) / 3 
+                count += 1
+            y+=1
+        x+=1
+    avg_for_square = -1
+    if count > 0:
+        avg_for_square = acc_intensity / count
+
+    return avg_for_square
+
 def display_avg_color_at_inters(img):
     # get all pixels in a square around the intersection
     dist = 12
@@ -223,7 +256,44 @@ def display_avg_color_at_inters(img):
     
     #print("the value at "+str(type(img)))
 
-
+def update_intersection_intensity_avgs(img):
+    global FRAMES_CAPTURED_THUS_FAR
+    global INTERSECTIONS
+    global INTERSECTION_ACC_INTS 
+    if len(INTERSECTIONS) == 361:
+        FRAMES_CAPTURED_THUS_FAR += 1
+        # get avg value for each intersection
+        for inter in INTERSECTIONS:
+            curr_avg = get_avg_intensity_inter(img, inter[0], inter[1]) 
+            key = str(inter[0]) + "," + str(inter[1])
+            # add avg to running accumulator
+            #print("wtf - "+str(type(INTERSECTION_ACC_INTS)))
+            if key in INTERSECTION_ACC_INTS.keys():
+                prev_avgs = INTERSECTION_ACC_INTS[key]
+                if len(prev_avgs) < NUM_FRAMES_TO_KEEP:
+                    prev_avgs.insert(0, curr_avg)
+                    INTERSECTION_ACC_INTS[key] = prev_avgs
+                else:
+                    prev_avgs.pop()
+                    prev_avgs.insert(0,curr_avg)
+                    INTERSECTION_ACC_INTS[key]= prev_avgs
+            else:
+                INTERSECTION_ACC_INTS[key] = [curr_avg]
+        
+        
+    
+def display_intersection_avgs(img):
+    display_img = img.copy()
+    global INTERSECTIONS, INTERSECTION_ACC_INTS, FRAMES_CAPTURED_THUS_FAR
+    dist = 12
+    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+        for inter in INTERSECTIONS:
+            key = str(inter[0])+","+str(inter[1])
+            val = sum(INTERSECTION_ACC_INTS[key])
+            val = val / NUM_FRAMES_TO_KEEP    
+            cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+    return display_img
+            
 def dostuff(img):
     # transform first
     img,tlc,trc,blc,brc = transform(img.copy())
@@ -415,6 +485,27 @@ def get_last_average_img():
     if LAST_FRAMES is not None:
         LAST_FRAMES
 
+def check_new_stones(img):
+    change_threshold = 50
+    
+    # get curr_val for each intersection
+    display_img = img.copy()
+    global INTERSECTIONS, INTERSECTION_ACC_INTS, FRAMES_CAPTURED_THUS_FAR, STONES
+    dist = 12
+    if len(INTERSECTIONS) == pow(BOARD_SIZE,2) and len(INTERSECTION_ACC_INTS.values()[0]) == NUM_FRAMES_TO_KEEP and FRAMES_CAPTURED > NUM_FRAMES_TO_KEEP*2:
+        for inter in INTERSECTIONS:
+            curr_avg = get_avg_intensity_inter(img, inter[0], inter[1])
+             
+            # get prev_avg
+            key = str(inter[0])+","+str(inter[1])
+            prev_avg = sum(INTERSECTION_ACC_INTS[key])
+            prev_avg = prev_avg / NUM_FRAMES_TO_KEEP
+            
+            if abs(prev_avg-curr_avg) > change_threshold:
+                STONES.append([inter[0],inter[1]])
+                cv2.circle(display_img,tuple([inter[0],inter[1]]),5,(0,255,0),2)
+    return display_img
+
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
     cv2.namedWindow(video_window_name)
@@ -428,20 +519,23 @@ def getvideo():
     #    will_save_white_stone_images = True
     #SAVE_WHITE_STONE_IMAGES = False
     # end hacky logic
-    
+    global FRAMES_CAPTURED
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
         img = frame
+        FRAMES_CAPTURED+=1
         try:
             setcornersbyclicking(frame)
             img = dostuff(frame)
-            if BACKGROUND_IMAGE is None:
-                #BACKGROUND_IMAGE = cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
-                BACKGROUND_IMAGE = img.copy()
-                #cv2.imshow("background is",BACKGROUND_IMAGE)
+#             if BACKGROUND_IMAGE is None:
+#                 #BACKGROUND_IMAGE = cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
+#                 BACKGROUND_IMAGE = img.copy()
+#                 #cv2.imshow("background is",BACKGROUND_IMAGE)
             #fgbg = cv2.createBackgroundSubtractorMOG2()
-            #display_img = cv2.pyrUp(img)
-            display_img = img.copy()
+            if ZOOM_ON: 
+                display_img = cv2.pyrUp(img.copy())
+            else:
+                display_img = img.copy()
             pass
         except:
             img = frame
@@ -456,50 +550,53 @@ def getvideo():
         global MOST_RECENT_IMG
         cv2.imshow(video_window_name, display_img)
         rval, frame = vc.read()
-        
+        FRAMES_CAPTURED+=1
         try:
             img = dostuff(frame)
+            kernel = np.ones((5,5),np.uint8)
+            #img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
+            img = cv2.dilate(img,kernel,iterations = 1)
             display_img = img.copy()
-            display_avg_color_at_inters(display_img)
+            #display_avg_color_at_inters(display_img)
             MOST_RECENT_IMG = img
             add_img_to_last_frames(img) 
-            save_all_intersections_as_neg_images(img)
-            save_all_intersections_as_white_stones(img)
-            global BACKGROUND_IMAGE 
-            if BACKGROUND_IMAGE is not None:
-                #cv2.imshow("new_img is",img.copy())
-                #subtraction_img = BACKGROUND_IMAGE-cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
-                subtraction_img = BACKGROUND_IMAGE-img.copy()
-                #subtraction_img = cv2.fastNlMeansDenoisingColored(subtraction_img,None,10,10,7,21)
-                subtraction_img = cv2.blur(subtraction_img,(7,7))
-                subtraction_img = cv2.cvtColor(subtraction_img,cv2.COLOR_BGR2GRAY)
-                #(thresh, subtraction_img_bw) = cv2.threshold(subtraction_img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-                thresh = 127
-                subtraction_img_bw = cv2.threshold(subtraction_img, thresh, 255, cv2.THRESH_BINARY)[1]
-                #circles = cv2.HoughCircles(subtraction_img,cv2.HOUGH_GRADIENT,1,MIN_DIST,
-                #                param1=50,param2=30,minRadius=int(MIN_DIST/1.5),maxRadius=int(1.2*MIN_DIST))
-                #backtorgb = cv2.cvtColor(subtraction_img,cv2.COLOR_GRAY2RGB)
-                #raw_circles = circles
-                #if circles is not None:
-                #    circles = np.uint16(np.around(circles))
-                #    for circle in circles:
-                #        circle = np.array(circle[0]).tolist()   
-                #        cv2.circle(backtorgb,(circle[0],circle[1]),circle[2],(0,255,0),2)
-                #        # draw the center of the circle
-                #        cv2.circle(backtorgb,(circle[0],circle[1]),2,(0,0,255),3)
-                            
-                #subtraction_img = cv2.fastNlMeansDenoising()
-                #ret,th1 = cv2.threshold(subtraction_img,127,255,cv2.THRESH_BINARY)
-                cv2.imshow("mask",subtraction_img_bw)
+            #save_all_intersections_as_neg_images(img)
+            #save_all_intersections_as_white_stones(img)
+#             global BACKGROUND_IMAGE 
+#             if BACKGROUND_IMAGE is not None:
+#                 #cv2.imshow("new_img is",img.copy())
+#                 #subtraction_img = BACKGROUND_IMAGE-cv2.cvtColor(img.copy(),cv2.COLOR_BGR2GRAY)
+#                 subtraction_img = BACKGROUND_IMAGE-img.copy()
+#                 #subtraction_img = cv2.fastNlMeansDenoisingColored(subtraction_img,None,10,10,7,21)
+#                 #subtraction_img = cv2.blur(subtraction_img,(7,7))
+#                 subtraction_img = cv2.cvtColor(subtraction_img,cv2.COLOR_BGR2GRAY)
+#                 #(thresh, subtraction_img_bw) = cv2.threshold(subtraction_img, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+#                 thresh = 127
+#                 subtraction_img_bw = cv2.threshold(subtraction_img, thresh, 255, cv2.THRESH_BINARY)[1]
+#                 #circles = cv2.HoughCircles(subtraction_img,cv2.HOUGH_GRADIENT,1,MIN_DIST,
+#                 #                param1=50,param2=30,minRadius=int(MIN_DIST/1.5),maxRadius=int(1.2*MIN_DIST))
+#                 #backtorgb = cv2.cvtColor(subtraction_img,cv2.COLOR_GRAY2RGB)
+#                 #raw_circles = circles
+#                 #if circles is not None:
+#                 #    circles = np.uint16(np.around(circles))
+#                 #    for circle in circles:
+#                 #        circle = np.array(circle[0]).tolist()   
+#                 #        cv2.circle(backtorgb,(circle[0],circle[1]),circle[2],(0,255,0),2)
+#                 #        # draw the center of the circle
+#                 #        cv2.circle(backtorgb,(circle[0],circle[1]),2,(0,0,255),3)
+#                              
+#                 #subtraction_img = cv2.fastNlMeansDenoising()
+#                 #ret,th1 = cv2.threshold(subtraction_img,127,255,cv2.THRESH_BINARY)
+#                 cv2.imshow("mask",subtraction_img_bw)
             # display circles around stones
-            if len(STONES) > 0:
-                for i in STONES:
-                    # draw the outer circle
-                    #cir = 
-                    print("i is "+str(i)+" and has type "+str(type(i)))
-                    cv2.circle(display_img,(i[0],i[1]),i[2],(0,255,0),2)
-                    # draw the center of the circle
-                    cv2.circle(display_img,(i[0],i[1]),2,(0,0,255),3)
+#             if len(STONES) > 0:
+#                 for i in STONES:
+#                     # draw the outer circle
+#                     #cir = 
+#                     #print("i is "+str(i)+" and has type "+str(type(i)))
+#                     cv2.circle(display_img,(i[0],i[1]),i[2],(0,255,0),2)
+#                     # draw the center of the circle
+#                     cv2.circle(display_img,(i[0],i[1]),2,(0,0,255),3)
             
             # display intersections
 #             letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T']
@@ -510,21 +607,29 @@ def getvideo():
 #             print(str(labels))
             sort_intersections()
             i = 0
+            
+            update_intersection_intensity_avgs(img)
+            
+            display_img = display_intersection_avgs(img)
+            
             for inter in INTERSECTIONS:
-                #cv2.rectangle(img,tuple([int(inter[0]-1),int(inter[1]-1)]),tuple([int(inter[0]+1),int(inter[1]+1)]),(0,0,255),1)
-                #cv2.putText(img,labels[i],tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
-                i+=1
-            global LABELS
+                cv2.rectangle(display_img,tuple([int(inter[0]-6),int(inter[1]-6)]),tuple([int(inter[0]+6),int(inter[1]+6)]),(0,0,255),1)
+                #key = str(inter[0])+","+str(inter[1])
+                #cv2.putText(img,INTERSECTION_AVG_INTS[key] ,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+                #i+=1
+                
+            display_img = check_new_stones(display_img)
+            #global LABELS
             #print("LABELS is "+str(LABELS))
-            for label,inter in LABELS.items():
-                cv2.rectangle(display_img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
-                cv2.putText(display_img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(50,50,255))
+            #for label,inter in LABELS.items():
+            #    cv2.rectangle(display_img,tuple([int(inter[0]-5),int(inter[1]-5)]),tuple([int(inter[0]+5),int(inter[1]+5)]),(0,0,255),1)
+            #    cv2.putText(display_img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(50,50,255))
             
             # zoom in 
-#             if ZOOM_ON:
-#                 display_img = cv2.pyrUp(img)
-#             else:
-#                 display_img = img
+            if ZOOM_ON:
+                display_img = cv2.pyrUp(display_img)
+            else:
+                display_img = display_img
             pass
             #cv2.imwrite(IMAGES_DIR+"webcam-empty-board-transformed"+str(frame_count)+".jpg", img)
         except:
