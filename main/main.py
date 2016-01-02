@@ -16,65 +16,17 @@ import math
 import traceback
 from cv2 import pyrUp
 import collections
+import config
 
-
-# config variables
-ZOOM_ON = True
-SAVE_NEG_IMAGES = True
-SAVE_WHITE_STONE_IMAGES = True
-
-# Display variables
-DRAW_LINES = False
-
-IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
-NEG_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\neg\\'
-POS_WHITE_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\white\\'
-STONE_IMAGES = ['WhiteStone2.jpg','BlackStone2.jpg']
-CORNER_IMAGES = ['webcam-tlc1.jpg','webcam-trc1.jpg','webcam-blc1.jpg','webcam-brc1.jpg']
-CORNER_POINTS = []#[[139,152],[508,156],[29,432],[634,432]]
-PERSPECTIVE_CORNER_POINTS = []
-INTERSECTION_FN = 'webcam-empty-board-transformed1.jpg'
-THRESHOLD = 0.7
-BOARD_SIZE = 19
-FRAMES_CAPTURED = 0
-INTERSECTIONS = [] # coordinates of intersections on the empty board
-STONES = [] # coordinates of stones on the board
-
-MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
-BUFFER = 8
-
-NUM_FRAMES_TO_KEEP = 50
-
-BACKGROUND_IMAGE = None
-
-FRAMES_CAPTURED_THUS_FAR = 0
-
-total_clicks = 4
-n_clicks = 0
-points = []
-curr_white_stone_clicks = 0
-total_white_stone_clicks = 81
-
-# dictionary where the key is an intersection and the value is the go board index (i.e. J5)
-LABELS = {}
-
-INTERSECTION_ACC_INTS = {} # key is str of x,y of coordinate, val is avg intensity of pixels in recetangle of intersection
-
-NUM_FRAMES = 10
-LAST_FRAMES = None
-
-MOST_RECENT_IMG = None
 
 def sort_intersections():
-    global INTERSECTIONS
-    global LABELS
-    if len(PERSPECTIVE_CORNER_POINTS) == 4 and len(INTERSECTIONS) == pow(BOARD_SIZE,2):
-        tlc,trc,blc,brc = PERSPECTIVE_CORNER_POINTS
+    if len(config.PERSPECTIVE_CORNER_POINTS) == 4 and len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+        tlc,trc,blc,brc = config.PERSPECTIVE_CORNER_POINTS
         tlc_inter, trc_inter, blc_inter, brc_inter = get_closest_inter(tlc),get_closest_inter(trc),get_closest_inter(blc),get_closest_inter(brc)
-        LABELS['A1']=tlc_inter
-        LABELS['A19']=trc_inter
-        LABELS['T1']=blc_inter
-        LABELS['T19']=brc_inter
+        config.LABELS['A1']=tlc_inter
+        config.LABELS['A19']=trc_inter
+        config.LABELS['T1']=blc_inter
+        config.LABELS['T19']=brc_inter
 
 def get_closest_inter(pt):
     global INTERSECTIONS
@@ -118,11 +70,9 @@ def seg_intersect(img, a1,a2, b1,b2) :
     return result
 
 def find_intersections(img):
-    global INTERSECTIONS, MIN_DIST
-    
-    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
         return img
-    elif len(INTERSECTIONS) > pow(BOARD_SIZE,2):
+    elif len(config.INTERSECTIONS) > pow(config.BOARD_SIZE,2):
         raise Exception("Whoops too many intersections")
     else:
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
@@ -142,7 +92,7 @@ def find_intersections(img):
                 y2 = int(y0 - 1000*(a))
              
             lines_pts.append([np.array([x1,y1]),np.array([x2,y2])])
-            if DRAW_LINES: cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)      
+            if config.DRAW_LINES: cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)      
             
     # find all intersections, while ignoring duplicates
     lines_a = [pt for pt in copy.copy(lines_pts)]
@@ -158,7 +108,7 @@ def find_intersections(img):
                 curr_i = [int(result[0]),int(result[1])]
                 duplicate = False
                 for prev_i in INTERSECTIONS:
-                    if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < MIN_DIST:
+                    if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < config.MIN_DIST:
                         duplicate = True
                 if not duplicate:
                     INTERSECTIONS.append([int(result[0]),int(result[1])])    
@@ -169,8 +119,8 @@ def find_stones(img):
     img = cv2.medianBlur(img,5)
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-    circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,MIN_DIST,
-                                param1=50,param2=30,minRadius=int(MIN_DIST/1.5),maxRadius=int(1.2*MIN_DIST))
+    circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,config.MIN_DIST,
+                                param1=50,param2=30,minRadius=int(config.MIN_DIST/1.5),maxRadius=int(1.2*config.MIN_DIST))
     
     raw_circles = circles
     if circles is not None:
@@ -221,8 +171,8 @@ def display_avg_color_at_inters(img):
     # get all pixels in a square around the intersection
     dist = 12
     #print("img.shape="+str(img.shape))
-    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
-        for inter in INTERSECTIONS:
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+        for inter in config.INTERSECTIONS:
             #print("inter is "+str(inter))
             #if inter[1] < img.shape[0] and inter[0] < img.shape[1]:
             
@@ -257,40 +207,41 @@ def display_avg_color_at_inters(img):
     #print("the value at "+str(type(img)))
 
 def update_intersection_intensity_avgs(img):
-    global FRAMES_CAPTURED_THUS_FAR
-    global INTERSECTIONS
-    global INTERSECTION_ACC_INTS 
-    if len(INTERSECTIONS) == 361:
-        FRAMES_CAPTURED_THUS_FAR += 1
+    if len(config.INTERSECTIONS) == 361:
+        config.FRAMES_CAPTURED_THUS_FAR += 1
         # get avg value for each intersection
-        for inter in INTERSECTIONS:
+        for inter in config.INTERSECTIONS:
             curr_avg = get_avg_intensity_inter(img, inter[0], inter[1]) 
             key = str(inter[0]) + "," + str(inter[1])
             # add avg to running accumulator
             #print("wtf - "+str(type(INTERSECTION_ACC_INTS)))
-            if key in INTERSECTION_ACC_INTS.keys():
-                prev_avgs = INTERSECTION_ACC_INTS[key]
-                if len(prev_avgs) < NUM_FRAMES_TO_KEEP:
+            if key in config.INTERSECTION_ACC_INTS.keys():
+                prev_avgs = config.INTERSECTION_ACC_INTS[key]
+                if len(prev_avgs) < config.NUM_FRAMES_TO_KEEP:
                     prev_avgs.insert(0, curr_avg)
-                    INTERSECTION_ACC_INTS[key] = prev_avgs
+                    config.INTERSECTION_ACC_INTS[key] = prev_avgs
                 else:
                     prev_avgs.pop()
                     prev_avgs.insert(0,curr_avg)
-                    INTERSECTION_ACC_INTS[key]= prev_avgs
+                    config.INTERSECTION_ACC_INTS[key]= prev_avgs
             else:
-                INTERSECTION_ACC_INTS[key] = [curr_avg]
+                config.INTERSECTION_ACC_INTS[key] = [curr_avg]
         
         
     
 def display_intersection_avgs(img):
     display_img = img.copy()
-    global INTERSECTIONS, INTERSECTION_ACC_INTS, FRAMES_CAPTURED_THUS_FAR
     dist = 12
-    if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
+    
+    divide_val = config.NUM_FRAMES_TO_KEEP
+    if FRAMES_CAPTURED < config.NUM_FRAMES_TO_KEEP:
+        divide_val = FRAMES_CAPTURED
+    
+    if len(INTERSECTIONS) == pow(config.BOARD_SIZE,2):
         for inter in INTERSECTIONS:
             key = str(inter[0])+","+str(inter[1])
-            val = sum(INTERSECTION_ACC_INTS[key])
-            val = val / NUM_FRAMES_TO_KEEP    
+            val = sum(config.INTERSECTION_ACC_INTS[key])
+            val = val / divide_val    
             cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
     return display_img
             
@@ -299,18 +250,16 @@ def dostuff(img):
     img,tlc,trc,blc,brc = transform(img.copy())
     
     # crop (so we only look at the board)
-    if len(CORNER_POINTS) == 4:
-        global BUFFER
-        x1 = tlc[0] - BUFFER
-        x2 = trc[0] + BUFFER
-        y1 = tlc[1] - BUFFER
-        y2 = blc[1] + BUFFER
+    if len(config.CORNER_POINTS) == 4:
+        x1 = tlc[0] - config.BUFFER
+        x2 = trc[0] + config.BUFFER
+        y1 = tlc[1] - config.BUFFER
+        y2 = blc[1] + config.BUFFER
         img = crop(img,x1,y1,x2,y2)
         
         h,w = img.shape[0], img.shape[1]
         
-    global PERSPECTIVE_CORNER_POINTS
-    PERSPECTIVE_CORNER_POINTS = [[BUFFER,BUFFER],[w-BUFFER,BUFFER],[BUFFER,h-BUFFER],[w-BUFFER,h-BUFFER]]
+    config.PERSPECTIVE_CORNER_POINTS = [[config.BUFFER,config.BUFFER],[w-config.BUFFER,config.BUFFER],[config.BUFFER,h-config.BUFFER],[w-config.BUFFER,h-config.BUFFER]]
         
     # find the intersections (only runs unless all intersections have been found)
     img = find_intersections(img)
@@ -362,8 +311,7 @@ def on_mouse_click(event, x, y, flag, param):
         n_clicks += 1
 
 def setcornersbyclicking(img):
-    global CORNER_POINTS
-    while n_clicks <= total_clicks-1:
+    while config.n_clicks <= config.total_clicks-1:
         # displays the image
         cv2.imshow("Click", img)
         #cv.ShowImage("Click", cvimage)
@@ -373,69 +321,9 @@ def setcornersbyclicking(img):
         #cv.WaitKey(1000)
         cv2.waitKey(1000)
 
-    CORNER_POINTS = points
+    config.CORNER_POINTS = points
     #return points
 
-def save_all_interesections_as_white_stones(img):
-    '''
-    After the intersections have been properly identified, this will crop the image into
-    361 individual images, one for each intersection.
-    '''
-    w, h = 18,18
-    count = 0
-    global SAVE_NEG_IMAGES, INTERSECTIONS 
-    if SAVE_WHITE_STONE_IMAGES:
-        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
-            for inter in INTERSECTIONS:
-                x1 = inter[0] - (w / 2)
-                y1 = inter[1] - (h / 2)
-                x2 = inter[0] + (w / 2)
-                y2 = inter[1] + (h / 2)
-                cv2.imwrite(POS_WHITE_TRAINING_IMAGES_DIR+"white_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
-                count+=1
-            print("Just produced "+ str(count)+" white stone images")
-            SAVE_WHITE_STONE_IMAGES = False
-
-
-def save_all_intersections_as_neg_images(img):
-    '''
-    After the intersections have been properly identified, this will crop the image into
-    361 individual images, one for each intersection.
-    '''
-    w, h = 18,18
-    count = 0
-    global SAVE_NEG_IMAGES, INTERSECTIONS 
-    if SAVE_NEG_IMAGES:
-        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
-            for inter in INTERSECTIONS:
-                x1 = inter[0] - (w / 2)
-                y1 = inter[1] - (h / 2)
-                x2 = inter[0] + (w / 2)
-                y2 = inter[1] + (h / 2)
-                cv2.imwrite(NEG_TRAINING_IMAGES_DIR+"neg_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
-                count+=1
-            print("Just produced "+ str(count)+" negative images")
-            SAVE_NEG_IMAGES = False
-
-def save_all_intersections_as_white_stones(img):
-    '''
-    After the intersections have been properly identified, this will crop the image into
-    361 individual images, one for each intersection.
-    '''
-    w, h = 14,14
-    count = 0
-    global SAVE_WHITE_STONE_IMAGES, INTERSECTIONS 
-    if SAVE_WHITE_STONE_IMAGES:
-        if len(INTERSECTIONS) == pow(BOARD_SIZE,2):
-            for inter in INTERSECTIONS:
-                x1 = inter[0] - (w / 2)
-                y1 = inter[1] - (h / 2)
-                x2 = inter[0] + (w / 2)
-                y2 = inter[1] + (h / 2)
-                cv2.imwrite(POS_WHITE_TRAINING_IMAGES_DIR+"white_"+str(count)+".jpg", crop(img,x1,y1,x2,y2))
-                count+=1
-            print("Just produced "+ str(count)+" white stone images")
-            SAVE_WHITE_STONE_IMAGES = False     
 
 def mouseclick_show_histogram(event, x, y, flag, param):
     '''
@@ -486,31 +374,64 @@ def get_last_average_img():
         LAST_FRAMES
 
 def check_new_stones(img):
-    change_threshold = 50
+    change_threshold = 70
     
     # get curr_val for each intersection
     display_img = img.copy()
-    global INTERSECTIONS, INTERSECTION_ACC_INTS, FRAMES_CAPTURED_THUS_FAR, STONES
     dist = 12
-    if len(INTERSECTIONS) == pow(BOARD_SIZE,2) and len(INTERSECTION_ACC_INTS.values()[0]) == NUM_FRAMES_TO_KEEP and FRAMES_CAPTURED > NUM_FRAMES_TO_KEEP*2:
-        for inter in INTERSECTIONS:
+    #print("num saved intersection data is "+str(len(INTERSECTION_ACC_INTS.values()[0]))+" and frames captured is "+str(FRAMES_CAPTURED))
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2) and len(config.INTERSECTION_ACC_INTS.values()[0]) == config.NUM_FRAMES_TO_KEEP and FRAMES_CAPTURED > config.NUM_FRAMES_TO_KEEP*2:
+        for inter in config.INTERSECTIONS:
             curr_avg = get_avg_intensity_inter(img, inter[0], inter[1])
              
             # get prev_avg
             key = str(inter[0])+","+str(inter[1])
-            prev_avg = sum(INTERSECTION_ACC_INTS[key])
-            prev_avg = prev_avg / NUM_FRAMES_TO_KEEP
+            prev_avg = sum(config.INTERSECTION_ACC_INTS[key])
+            prev_avg = prev_avg / config.NUM_FRAMES_TO_KEEP
             
             if abs(prev_avg-curr_avg) > change_threshold:
+                print("prev avg was "+str(prev_avg)+" and curr_avg is "+str(curr_avg))
                 STONES.append([inter[0],inter[1]])
                 cv2.circle(display_img,tuple([inter[0],inter[1]]),5,(0,255,0),2)
     return display_img
 
+def simple_get_video_bg_subtract():
+    video_window_name = "Go Board Live Video Stream" 
+    cv2.namedWindow(video_window_name)
+    vc = cv2.VideoCapture(1)
+    cv2.setMouseCallback(video_window_name, mouseclick_show_histogram, param=1)
+    fgbg = cv2.createBackgroundSubtractorMOG2()
+    
+    #cv2.imshow(video_window_name, display_img)
+    
+    while(1):
+        ret, frame = vc.read()
+    
+        fgmask = fgbg.apply(frame)
+        #fgmask_gray = cv2.cvtColor() 
+        circles = cv2.HoughCircles(fgmask,cv2.HOUGH_GRADIENT,1,config.MIN_DIST,
+                                param1=50,param2=30,minRadius=int(config.MIN_DIST/1.5),maxRadius=int(1.2*config.MIN_DIST))
+        if circles is not None:
+            circles = np.uint16(np.around(circles))
+            for circle in circles:
+                circle = np.array(circle[0]).tolist()
+                cv2.circle(frame,(circle[0],circle[1]),circle[2],(0,255,0),2)
+            cv2.imshow("Circles",frame)
+        
+        cv2.imshow(video_window_name,fgmask)
+        k = cv2.waitKey(30) & 0xff
+        if k == 27:
+            break
+    
+    vc.release()
+    cv2.destroyAllWindows()
+    
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
     cv2.namedWindow(video_window_name)
     vc = cv2.VideoCapture(1)
     cv2.setMouseCallback(video_window_name, mouseclick_show_histogram, param=1)
+    fgbg = cv2.createBackgroundSubtractorMOG2()
     
     # complicated, hacky logic, just ignore - only used to collect training data
     #will_save_white_stone_images = False
@@ -523,7 +444,8 @@ def getvideo():
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
         img = frame
-        FRAMES_CAPTURED+=1
+        fgmask = fgbg.apply(frame)
+        #FRAMES_CAPTURED+=1
         try:
             setcornersbyclicking(frame)
             img = dostuff(frame)
@@ -532,7 +454,7 @@ def getvideo():
 #                 BACKGROUND_IMAGE = img.copy()
 #                 #cv2.imshow("background is",BACKGROUND_IMAGE)
             #fgbg = cv2.createBackgroundSubtractorMOG2()
-            if ZOOM_ON: 
+            if config.ZOOM_ON: 
                 display_img = cv2.pyrUp(img.copy())
             else:
                 display_img = img.copy()
@@ -553,9 +475,9 @@ def getvideo():
         FRAMES_CAPTURED+=1
         try:
             img = dostuff(frame)
-            kernel = np.ones((5,5),np.uint8)
+            #kernel = np.ones((5,5),np.uint8)
             #img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
-            img = cv2.dilate(img,kernel,iterations = 1)
+            #img = cv2.dilate(img,kernel,iterations = 1)
             display_img = img.copy()
             #display_avg_color_at_inters(display_img)
             MOST_RECENT_IMG = img
@@ -626,7 +548,7 @@ def getvideo():
             #    cv2.putText(display_img,label,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(50,50,255))
             
             # zoom in 
-            if ZOOM_ON:
+            if config.ZOOM_ON:
                 display_img = cv2.pyrUp(display_img)
             else:
                 display_img = display_img
@@ -651,15 +573,15 @@ def getvideo():
     cv2.destroyWindow("preview")
 
 def load_stone_images():
-    template = cv2.imread(IMAGES_DIR+'WhiteStone1',0)
+    template = cv2.imread(config.IMAGES_DIR+'WhiteStone1',0)
 
 def drawintersections(img):
-    intersection_template = cv2.imread(IMAGES_DIR+INTERSECTION_FN,0)
+    intersection_template = cv2.imread(config.IMAGES_DIR+config.INTERSECTION_FN,0)
     w, h = intersection_template.shape[::-1]
     img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
     res = cv2.matchTemplate(img,intersection_template,cv2.TM_CCOEFF_NORMED)
     
-    loc = np.where( res >= THRESHOLD)
+    loc = np.where( res >= config.THRESHOLD)
     print("loc is "+str(loc))
     for pt in zip(*loc[::-1]):
         cv2.rectangle(img, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
@@ -667,21 +589,21 @@ def drawintersections(img):
     return img
 
 def getcornerpts(main_img):
-    tlc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[0],0)
+    tlc_template = cv2.imread(config.IMAGES_DIR + config.CORNER_IMAGES[0],0)
     tlc_w, tlc_h = tlc_template.shape[::-1]
     tlc_w_offset = tlc_w / 2
     tlc_h_offset = tlc_h / 2
-    trc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[1],0)
+    trc_template = cv2.imread(config.IMAGES_DIR +config.CORNER_IMAGES[1],0)
     trc_w, trc_h = trc_template.shape[::-1]
     trc_w_offset = trc_w / 2
     trc_h_offset = trc_h / 2
-    blc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[2],0)
+    blc_template = cv2.imread(config.IMAGES_DIR + config.CORNER_IMAGES[2],0)
     #print("blc_template.shape = "+str(blc_template.shape[::-1]))
     blc_w, blc_h = blc_template.shape[::-1]
     #print("blc_w, blc_h = "+str(blc_w)+","+str(blc_h))
     blc_w_offset = blc_w / 2
     blc_h_offset = blc_h / 2
-    brc_template = cv2.imread(IMAGES_DIR + CORNER_IMAGES[3],0)
+    brc_template = cv2.imread(config.IMAGES_DIR + config.CORNER_IMAGES[3],0)
     brc_w, brc_h = brc_template.shape[::-1]
     brc_w_offset = brc_w / 2
     brc_h_offset = brc_h / 2
@@ -704,19 +626,19 @@ def getcornerpts(main_img):
     blc_res = cv2.matchTemplate(img_gray,blc_template,cv2.TM_CCOEFF_NORMED)
     brc_res = cv2.matchTemplate(img_gray,brc_template,cv2.TM_CCOEFF_NORMED)
      
-    tlc_loc = np.where( tlc_res >= THRESHOLD)
+    tlc_loc = np.where( tlc_res >= config.THRESHOLD)
     tlc_loc_pt = zip(*tlc_loc[::-1])[0]
     tlc_loc_pt_middle = tuple([tlc_loc_pt[0] + tlc_w_offset,tlc_loc_pt[1] + tlc_h_offset])
     #print(str(tlc_loc_pt))
     #print("new point = "+str(tlc_loc_pt_middle))
-    trc_loc = np.where( trc_res >= THRESHOLD)
+    trc_loc = np.where( trc_res >= config.THRESHOLD)
     #print(str(trc_loc))
     trc_loc_pt = zip(*trc_loc[::-1])[0]
     trc_loc_pt_middle = tuple([trc_loc_pt[0] + trc_w_offset,trc_loc_pt[1] + trc_h_offset])
-    blc_loc = np.where( blc_res >= THRESHOLD)
+    blc_loc = np.where( blc_res >= config.THRESHOLD)
     blc_loc_pt = zip(*blc_loc[::-1])[0]
     blc_loc_pt_middle = tuple([blc_loc_pt[0] + blc_w_offset,blc_loc_pt[1] + blc_h_offset])
-    brc_loc = np.where( brc_res >= THRESHOLD)
+    brc_loc = np.where( brc_res >= config.THRESHOLD)
     brc_loc_pt = zip(*brc_loc[::-1])[0]
     brc_loc_pt_middle = tuple([brc_loc_pt[0] + brc_w_offset,brc_loc_pt[1] + brc_h_offset])
 
@@ -728,7 +650,7 @@ def transform(img):
     
     # get the original four corners via template matching
     #tlc,trc,blc,brc = getcornerpts(img)
-    tlc,trc,blc,brc = CORNER_POINTS
+    tlc,trc,blc,brc = config.CORNER_POINTS
     #print("corner_tlc is "+str(tlc))
     #print("corner_trc is "+str(trc))
     #print("corner_blc is "+str(blc))
@@ -776,18 +698,18 @@ def computegrid(img,tlc,trc,blc,brc):
     # grid is a mapping of coordinates (0,0) to pixels in the image
     grid = []
     
-    col_dist = (trc[0] - tlc[0]) / BOARD_SIZE
-    row_dist = (blc[1] - tlc[1]) / BOARD_SIZE
+    col_dist = (trc[0] - tlc[0]) / config.BOARD_SIZE
+    row_dist = (blc[1] - tlc[1]) / config.BOARD_SIZE
     print("col_dist is "+str(col_dist)+",row_dist is "+str(row_dist))
     origin_x = tlc[0]
     origin_y = tlc[1]
     
     row_y_offset = 0
     
-    for r in range(BOARD_SIZE+1):
+    for r in range(config.BOARD_SIZE+1):
         row = []
         col_x_offset = 0
-        for c in range(BOARD_SIZE+1):
+        for c in range(config.BOARD_SIZE+1):
             row.append(tuple([origin_x+col_x_offset,origin_y+row_y_offset]))
             print("just appended point: "+str([origin_x+col_x_offset,origin_y+row_y_offset]))
             col_x_offset += col_dist
@@ -810,80 +732,81 @@ def showgrid(img, grid):
     #plt.subplot(122),plt.imshow(dst),plt.title('Output')
     plt.show()
 
-def main():
-    ###### detect four corners and draw grid overlay
-    # read in images of the corners
-    img = cv2.imread(IMAGES_DIR + 'MidGame1.jpg')
-    print("Transforming image...")
-    img,new_tlc,new_trc,new_blc,new_brc = transform(img)
-    print("Computing Grid...") 
-    grid = computegrid(img, new_tlc, new_trc, new_blc, new_brc)
-    print("Drawing image with grid...") 
-    showgrid(img, grid) 
-     
-    # draw the boarders of the board's playing field
-    cv2.line(img_rgb,tlc_loc_pt_middle,trc_loc_pt_middle,(0,255,0),2)
-    cv2.line(img_rgb,trc_loc_pt_middle,brc_loc_pt_middle,(0,255,0),2)
-    cv2.line(img_rgb,brc_loc_pt_middle,blc_loc_pt_middle,(0,255,0),2)
-    cv2.line(img_rgb,blc_loc_pt_middle,tlc_loc_pt_middle,(0,255,0),2)
-     
-    # now calculate where the vertical lines on the go board meet the top border,
-    # dividing it up into board size columns
-    dist_between_top_columns_x = (trc_loc_pt_middle[0] - tlc_loc_pt_middle[0]) / BOARD_SIZE
-    dist_between_top_columns_h = (trc_loc_pt_middle[1] - tlc_loc_pt_middle[1]) / BOARD_SIZE
-    dist_between_bot_columns_x = (brc_loc_pt_middle[0] - blc_loc_pt_middle[0]) / BOARD_SIZE
-    dist_between_bot_columns_h = (brc_loc_pt_middle[1] - blc_loc_pt_middle[1]) / BOARD_SIZE
-    print("dist_between_top_columns_x ="+str(dist_between_top_columns_x))
-    print("dist_between_top_columns_h ="+str(dist_between_top_columns_h))
-    print("dist_between_bot_columns_x ="+str(dist_between_bot_columns_x))
-    print("dist_between_bot_columns_h ="+str(dist_between_bot_columns_h))
-    
-    # now draw all vertical lines in between
-    curr_top_x_offset = dist_between_top_columns_x
-    curr_top_h_offset = dist_between_top_columns_h
-    curr_bot_x_offset = dist_between_bot_columns_x
-    curr_bot_h_offset = dist_between_bot_columns_h
-    horizontal_scalar = 4
-    for i in range(BOARD_SIZE-2): # subtract 2 because border lines already accounted for 
-        top_line_pt = tuple([tlc_loc_pt_middle[0]+curr_top_x_offset+(i*horizontal_scalar),tlc_loc_pt_middle[1]+curr_top_h_offset])
-        bot_line_pt = tuple([blc_loc_pt_middle[0]+curr_bot_x_offset+(i*horizontal_scalar),blc_loc_pt_middle[1]+curr_bot_h_offset])
-        curr_top_x_offset += dist_between_top_columns_x#+(i*horizontal_scalar)
-        curr_top_h_offset += dist_between_top_columns_h
-        curr_bot_x_offset += dist_between_bot_columns_x#+(i*horizontal_scalar)
-        curr_bot_h_offset += dist_between_bot_columns_h
-        cv2.line(img_rgb,top_line_pt,bot_line_pt,(0,255,0),2)
-     
-    cv2.imwrite(IMAGES_DIR+'grid-mapping2.png',img_rgb)
-
-    ###### detect stones
-    
-#     img_rgb = cv2.imread(IMAGES_DIR + 'MidGame1.jpg')
-#     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-#     for stone_fn in map(lambda x:IMAGES_DIR+x,STONE_IMAGES):
-#          
-#         template = cv2.imread(stone_fn,0)
-#         w, h = template.shape[::-1]
-#  
-#         res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
-#         THRESHOLD = 0.85
-#         loc = np.where( res >= THRESHOLD)
-#         for pt in zip(*loc[::-1]):
-#             cv2.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
-#  
-#     cv2.imwrite(IMAGES_DIR+'stone-detection2.png',img_rgb)
+# def main():
+#     ###### detect four corners and draw grid overlay
+#     # read in images of the corners
+#     img = cv2.imread(config.IMAGES_DIR + 'MidGame1.jpg')
+#     print("Transforming image...")
+#     img,new_tlc,new_trc,new_blc,new_brc = transform(img)
+#     print("Computing Grid...") 
+#     grid = computegrid(img, new_tlc, new_trc, new_blc, new_brc)
+#     print("Drawing image with grid...") 
+#     showgrid(img, grid) 
+#      
+#     # draw the boarders of the board's playing field
+#     cv2.line(img_rgb,tlc_loc_pt_middle,trc_loc_pt_middle,(0,255,0),2)
+#     cv2.line(img_rgb,trc_loc_pt_middle,brc_loc_pt_middle,(0,255,0),2)
+#     cv2.line(img_rgb,brc_loc_pt_middle,blc_loc_pt_middle,(0,255,0),2)
+#     cv2.line(img_rgb,blc_loc_pt_middle,tlc_loc_pt_middle,(0,255,0),2)
+#      
+#     # now calculate where the vertical lines on the go board meet the top border,
+#     # dividing it up into board size columns
+#     dist_between_top_columns_x = (trc_loc_pt_middle[0] - tlc_loc_pt_middle[0]) / BOARD_SIZE
+#     dist_between_top_columns_h = (trc_loc_pt_middle[1] - tlc_loc_pt_middle[1]) / BOARD_SIZE
+#     dist_between_bot_columns_x = (brc_loc_pt_middle[0] - blc_loc_pt_middle[0]) / BOARD_SIZE
+#     dist_between_bot_columns_h = (brc_loc_pt_middle[1] - blc_loc_pt_middle[1]) / BOARD_SIZE
+#     print("dist_between_top_columns_x ="+str(dist_between_top_columns_x))
+#     print("dist_between_top_columns_h ="+str(dist_between_top_columns_h))
+#     print("dist_between_bot_columns_x ="+str(dist_between_bot_columns_x))
+#     print("dist_between_bot_columns_h ="+str(dist_between_bot_columns_h))
 #     
-    ###### edge detection
-    #img = cv2.imread(IMAGES_DIR + 'EarlyGame1.jpg',0)
-    #edges = cv2.Canny(img,100,200)
-    
-    #plt.subplot(121),plt.imshow(img,cmap = 'gray')
-    #plt.title('Original Image'), plt.xticks([]), plt.yticks([])
-    #plt.subplot(122),plt.imshow(edges,cmap = 'gray')
-    #plt.title('Edge Image'), plt.xticks([]), plt.yticks([])
-    
-    #plt.show()
+#     # now draw all vertical lines in between
+#     curr_top_x_offset = dist_between_top_columns_x
+#     curr_top_h_offset = dist_between_top_columns_h
+#     curr_bot_x_offset = dist_between_bot_columns_x
+#     curr_bot_h_offset = dist_between_bot_columns_h
+#     horizontal_scalar = 4
+#     for i in range(BOARD_SIZE-2): # subtract 2 because border lines already accounted for 
+#         top_line_pt = tuple([tlc_loc_pt_middle[0]+curr_top_x_offset+(i*horizontal_scalar),tlc_loc_pt_middle[1]+curr_top_h_offset])
+#         bot_line_pt = tuple([blc_loc_pt_middle[0]+curr_bot_x_offset+(i*horizontal_scalar),blc_loc_pt_middle[1]+curr_bot_h_offset])
+#         curr_top_x_offset += dist_between_top_columns_x#+(i*horizontal_scalar)
+#         curr_top_h_offset += dist_between_top_columns_h
+#         curr_bot_x_offset += dist_between_bot_columns_x#+(i*horizontal_scalar)
+#         curr_bot_h_offset += dist_between_bot_columns_h
+#         cv2.line(img_rgb,top_line_pt,bot_line_pt,(0,255,0),2)
+#      
+#     cv2.imwrite(IMAGES_DIR+'grid-mapping2.png',img_rgb)
+# 
+#     ###### detect stones
+#     
+# #     img_rgb = cv2.imread(IMAGES_DIR + 'MidGame1.jpg')
+# #     img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
+# #     for stone_fn in map(lambda x:IMAGES_DIR+x,STONE_IMAGES):
+# #          
+# #         template = cv2.imread(stone_fn,0)
+# #         w, h = template.shape[::-1]
+# #  
+# #         res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
+# #         THRESHOLD = 0.85
+# #         loc = np.where( res >= THRESHOLD)
+# #         for pt in zip(*loc[::-1]):
+# #             cv2.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
+# #  
+# #     cv2.imwrite(IMAGES_DIR+'stone-detection2.png',img_rgb)
+# #     
+#     ###### edge detection
+#     #img = cv2.imread(IMAGES_DIR + 'EarlyGame1.jpg',0)
+#     #edges = cv2.Canny(img,100,200)
+#     
+#     #plt.subplot(121),plt.imshow(img,cmap = 'gray')
+#     #plt.title('Original Image'), plt.xticks([]), plt.yticks([])
+#     #plt.subplot(122),plt.imshow(edges,cmap = 'gray')
+#     #plt.title('Edge Image'), plt.xticks([]), plt.yticks([])
+#     
+#     #plt.show()
 
 if __name__ == '__main__':
     #main()
     #transform()
-    getvideo()
+    #getvideo()
+    simple_get_video_bg_subtract()
