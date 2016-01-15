@@ -18,7 +18,6 @@ from cv2 import pyrUp
 import collections
 import config
 
-
 def sort_intersections():
     if len(config.PERSPECTIVE_CORNER_POINTS) == 4 and len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
         tlc,trc,blc,brc = config.PERSPECTIVE_CORNER_POINTS
@@ -29,10 +28,10 @@ def sort_intersections():
         config.LABELS['T19']=brc_inter
 
 def get_closest_inter(pt):
-    global INTERSECTIONS
+    
     min_d = 1000
     min_inter = None
-    for inter in INTERSECTIONS:
+    for inter in config.INTERSECTIONS:
         curr_dist = dist(pt[0],pt[1],inter[0],inter[1]) 
         if curr_dist < min_d:
             min_inter = inter
@@ -107,15 +106,15 @@ def find_intersections(img):
                 # now compare against all intersections and make sure this one isn't a duplicate
                 curr_i = [int(result[0]),int(result[1])]
                 duplicate = False
-                for prev_i in INTERSECTIONS:
+                for prev_i in config.INTERSECTIONS:
                     if dist(prev_i[0], prev_i[1], curr_i[0], curr_i[1]) < config.MIN_DIST:
                         duplicate = True
                 if not duplicate:
-                    INTERSECTIONS.append([int(result[0]),int(result[1])])    
+                    config.INTERSECTIONS.append([int(result[0]),int(result[1])])    
     return img
 
 def find_stones(img):
-    global STONES
+    #global STONES
     img = cv2.medianBlur(img,5)
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
@@ -127,8 +126,8 @@ def find_stones(img):
         circles = np.uint16(np.around(circles))
         for circle in circles:
             circle = np.array(circle[0]).tolist()   
-            if circle not in STONES:
-                STONES.append(circle)
+            if circle not in config.STONES:
+                config.STONES.append(circle)
                 print("Just added stone: "+str(circle))
     return img
 
@@ -234,17 +233,33 @@ def display_intersection_avgs(img):
     dist = 12
     
     divide_val = config.NUM_FRAMES_TO_KEEP
-    if FRAMES_CAPTURED < config.NUM_FRAMES_TO_KEEP:
-        divide_val = FRAMES_CAPTURED
+    if config.FRAMES_CAPTURED < config.NUM_FRAMES_TO_KEEP:
+        divide_val = config.FRAMES_CAPTURED
     
-    if len(INTERSECTIONS) == pow(config.BOARD_SIZE,2):
-        for inter in INTERSECTIONS:
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+        for inter in config.INTERSECTIONS:
             key = str(inter[0])+","+str(inter[1])
             val = sum(config.INTERSECTION_ACC_INTS[key])
             val = val / divide_val    
             cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
     return display_img
-            
+
+def transform_and_crop(img, binary_image=False):
+    # transform first
+    img,tlc,trc,blc,brc = transform(img.copy(),binary_image=binary_image)
+    
+    # crop (so we only look at the board)
+    if len(config.CORNER_POINTS) == 4:
+        x1 = tlc[0] - config.BUFFER
+        x2 = trc[0] + config.BUFFER
+        y1 = tlc[1] - config.BUFFER
+        y2 = blc[1] + config.BUFFER
+        img = crop(img,x1,y1,x2,y2)
+        
+        h,w = img.shape[0], img.shape[1]
+    
+    return img
+        
 def dostuff(img):
     # transform first
     img,tlc,trc,blc,brc = transform(img.copy())
@@ -304,11 +319,10 @@ def on_mouse_click(event, x, y, flag, param):
     '''
     used to record points from clicking
     '''
-    global n_clicks, points
     if event == cv2.EVENT_LBUTTONDOWN:
-        print 'Point %s captured: (%s,%s)' % (n_clicks+1,x,y)
-        points.append([x, y])
-        n_clicks += 1
+        print 'Point %s captured: (%s,%s)' % (config.n_clicks+1,x,y)
+        config.points.append([x, y])
+        config.n_clicks += 1
 
 def setcornersbyclicking(img):
     while config.n_clicks <= config.total_clicks-1:
@@ -321,7 +335,7 @@ def setcornersbyclicking(img):
         #cv.WaitKey(1000)
         cv2.waitKey(1000)
 
-    config.CORNER_POINTS = points
+    config.CORNER_POINTS = config.points
     #return points
 
 
@@ -330,7 +344,7 @@ def mouseclick_show_histogram(event, x, y, flag, param):
     used to record points from clicking
     '''
     if event == cv2.EVENT_LBUTTONDOWN:
-        global MOST_RECENT_IMG
+        
         #print("eventchecks out")
         inter = get_closest_inter([x,y])
         # get image around inter
@@ -340,7 +354,7 @@ def mouseclick_show_histogram(event, x, y, flag, param):
         x2 = inter[0] + (dist / 2)
         y2 = inter[1] + (dist / 2)
                  
-        img = crop(MOST_RECENT_IMG,x1,y1,x2,y2)
+        img = crop(config.MOST_RECENT_IMG,x1,y1,x2,y2)
         #print("just cropped img")
         
         color = ('b','g','r')
@@ -358,20 +372,20 @@ def mouseclick_show_histogram(event, x, y, flag, param):
         #print("just showed it")
                     
 def add_img_to_last_frames(img): 
-    global LAST_FRAMES, NUM_FRAMES
     
-    if LAST_FRAMES is None:
+    
+    if config.LAST_FRAMES is None:
         # initialize LAST_FRAMES
         starting_frames = []
-        for i in range(NUM_FRAMES):
+        for i in range(config.NUM_FRAMES):
             starting_frames.append(img.copy())
-        LAST_FRAMES = collections.deque(starting_frames,NUM_FRAMES)                   
+        LAST_FRAMES = collections.deque(starting_frames,config.NUM_FRAMES)                   
     else:
         LAST_FRAMES.appendleft(img)
 
 def get_last_average_img():
-    if LAST_FRAMES is not None:
-        LAST_FRAMES
+    if config.LAST_FRAMES is not None:
+        config.LAST_FRAMES
 
 def check_new_stones(img):
     change_threshold = 70
@@ -380,7 +394,7 @@ def check_new_stones(img):
     display_img = img.copy()
     dist = 12
     #print("num saved intersection data is "+str(len(INTERSECTION_ACC_INTS.values()[0]))+" and frames captured is "+str(FRAMES_CAPTURED))
-    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2) and len(config.INTERSECTION_ACC_INTS.values()[0]) == config.NUM_FRAMES_TO_KEEP and FRAMES_CAPTURED > config.NUM_FRAMES_TO_KEEP*2:
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2) and len(config.INTERSECTION_ACC_INTS.values()[0]) == config.NUM_FRAMES_TO_KEEP and config.FRAMES_CAPTURED > config.NUM_FRAMES_TO_KEEP*2:
         for inter in config.INTERSECTIONS:
             curr_avg = get_avg_intensity_inter(img, inter[0], inter[1])
              
@@ -391,7 +405,7 @@ def check_new_stones(img):
             
             if abs(prev_avg-curr_avg) > change_threshold:
                 print("prev avg was "+str(prev_avg)+" and curr_avg is "+str(curr_avg))
-                STONES.append([inter[0],inter[1]])
+                config.STONES.append([inter[0],inter[1]])
                 cv2.circle(display_img,tuple([inter[0],inter[1]]),5,(0,255,0),2)
     return display_img
 
@@ -440,13 +454,14 @@ def getvideo():
     #    will_save_white_stone_images = True
     #SAVE_WHITE_STONE_IMAGES = False
     # end hacky logic
-    global FRAMES_CAPTURED
+    
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
         img = frame
         fgmask = fgbg.apply(frame)
         #FRAMES_CAPTURED+=1
         try:
+            #print("about to set corners by clicking")
             setcornersbyclicking(frame)
             img = dostuff(frame)
 #             if BACKGROUND_IMAGE is None:
@@ -469,10 +484,12 @@ def getvideo():
         rval = False
     
     while rval:
-        global MOST_RECENT_IMG
         cv2.imshow(video_window_name, display_img)
         rval, frame = vc.read()
-        FRAMES_CAPTURED+=1
+        fgmask = fgbg.apply(frame)
+        fgmask = transform_and_crop(fgmask,True)
+        cv2.imshow("background subtraction", fgmask)
+        config.FRAMES_CAPTURED+=1
         try:
             img = dostuff(frame)
             #kernel = np.ones((5,5),np.uint8)
@@ -480,7 +497,7 @@ def getvideo():
             #img = cv2.dilate(img,kernel,iterations = 1)
             display_img = img.copy()
             #display_avg_color_at_inters(display_img)
-            MOST_RECENT_IMG = img
+            config.MOST_RECENT_IMG = img
             add_img_to_last_frames(img) 
             #save_all_intersections_as_neg_images(img)
             #save_all_intersections_as_white_stones(img)
@@ -534,7 +551,7 @@ def getvideo():
             
             display_img = display_intersection_avgs(img)
             
-            for inter in INTERSECTIONS:
+            for inter in config.INTERSECTIONS:
                 cv2.rectangle(display_img,tuple([int(inter[0]-6),int(inter[1]-6)]),tuple([int(inter[0]+6),int(inter[1]+6)]),(0,0,255),1)
                 #key = str(inter[0])+","+str(inter[1])
                 #cv2.putText(img,INTERSECTION_AVG_INTS[key] ,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
@@ -644,9 +661,13 @@ def getcornerpts(main_img):
 
     return tlc_loc_pt_middle, trc_loc_pt_middle, blc_loc_pt_middle, brc_loc_pt_middle
 
-def transform(img):
-    
-    rows,cols,ch = img.shape
+def transform(img,binary_image=False):
+    rows,cols,ch = None,None,None
+    if binary_image:
+        rows,cols = img.shape
+    else:
+        rows,cols,ch = img.shape
+            
     
     # get the original four corners via template matching
     #tlc,trc,blc,brc = getcornerpts(img)
@@ -808,5 +829,5 @@ def showgrid(img, grid):
 if __name__ == '__main__':
     #main()
     #transform()
-    #getvideo()
-    simple_get_video_bg_subtract()
+    getvideo()
+    #simple_get_video_bg_subtract()
