@@ -113,23 +113,23 @@ def find_intersections(img):
                     config.INTERSECTIONS.append([int(result[0]),int(result[1])])    
     return img
 
-def find_stones(img):
-    #global STONES
-    img = cv2.medianBlur(img,5)
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-
-    circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,config.MIN_DIST,
-                                param1=50,param2=30,minRadius=int(config.MIN_DIST/1.5),maxRadius=int(1.2*config.MIN_DIST))
-    
-    raw_circles = circles
-    if circles is not None:
-        circles = np.uint16(np.around(circles))
-        for circle in circles:
-            circle = np.array(circle[0]).tolist()   
-            if circle not in config.STONES:
-                config.STONES.append(circle)
-                print("Just added stone: "+str(circle))
-    return img
+# def find_stones(img):
+#     #global STONES
+#     img = cv2.medianBlur(img,5)
+#     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+# 
+#     circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,config.MIN_DIST,
+#                                 param1=50,param2=30,minRadius=int(config.MIN_DIST/1.5),maxRadius=int(1.2*config.MIN_DIST))
+#     
+#     raw_circles = circles
+#     if circles is not None:
+#         circles = np.uint16(np.around(circles))
+#         for circle in circles:
+#             circle = np.array(circle[0]).tolist()   
+#             if circle not in config.STONES:
+#                 config.STONES.append(circle)
+#                 print("Just added stone: "+str(circle))
+#     return img
 
 def crop(img,x1,y1,x2,y2):
     '''
@@ -139,7 +139,7 @@ def crop(img,x1,y1,x2,y2):
     new_img = new_img[y1:y2,x1:x2]
     return new_img
 
-def get_num_white_pixels(img,inter,dist=12):
+def get_num_white_pixels(img,inter,dist=10):
     '''
     ONLY TAKES A BINARY IMAGE
     Returns the number of white pixels within a certain distance of the intersection
@@ -271,6 +271,16 @@ def display_intersection_avgs(img):
             val = sum(config.INTERSECTION_ACC_INTS[key])
             val = val / divide_val    
             cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+    return display_img
+
+def display_intersection_move_number(img):
+    display_img = img.copy()
+    dist = 12
+    
+    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+        for move_num,inter in config.STONES.items():
+            val = str(move_num)    
+            cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,color=(50,255,50))
     return display_img
 
 def transform_and_crop(img, binary_image=False):
@@ -416,27 +426,27 @@ def get_last_average_img():
     if config.LAST_FRAMES is not None:
         config.LAST_FRAMES
 
-def check_new_stones(img):
-    change_threshold = 70
-    
-    # get curr_val for each intersection
-    display_img = img.copy()
-    dist = 12
-    #print("num saved intersection data is "+str(len(INTERSECTION_ACC_INTS.values()[0]))+" and frames captured is "+str(FRAMES_CAPTURED))
-    if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2) and len(config.INTERSECTION_ACC_INTS.values()[0]) == config.NUM_FRAMES_TO_KEEP and config.FRAMES_CAPTURED > config.NUM_FRAMES_TO_KEEP*2:
-        for inter in config.INTERSECTIONS:
-            curr_avg = get_avg_intensity_inter(img, inter[0], inter[1])
-             
-            # get prev_avg
-            key = str(inter[0])+","+str(inter[1])
-            prev_avg = sum(config.INTERSECTION_ACC_INTS[key])
-            prev_avg = prev_avg / config.NUM_FRAMES_TO_KEEP
-            
-            if abs(prev_avg-curr_avg) > change_threshold:
-                print("prev avg was "+str(prev_avg)+" and curr_avg is "+str(curr_avg))
-                config.STONES.append([inter[0],inter[1]])
-                cv2.circle(display_img,tuple([inter[0],inter[1]]),5,(0,255,0),2)
-    return display_img
+# def check_new_stones(img):
+#     change_threshold = 70
+#     
+#     # get curr_val for each intersection
+#     display_img = img.copy()
+#     dist = 12
+#     #print("num saved intersection data is "+str(len(INTERSECTION_ACC_INTS.values()[0]))+" and frames captured is "+str(FRAMES_CAPTURED))
+#     if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2) and len(config.INTERSECTION_ACC_INTS.values()[0]) == config.NUM_FRAMES_TO_KEEP and config.FRAMES_CAPTURED > config.NUM_FRAMES_TO_KEEP*2:
+#         for inter in config.INTERSECTIONS:
+#             curr_avg = get_avg_intensity_inter(img, inter[0], inter[1])
+#              
+#             # get prev_avg
+#             key = str(inter[0])+","+str(inter[1])
+#             prev_avg = sum(config.INTERSECTION_ACC_INTS[key])
+#             prev_avg = prev_avg / config.NUM_FRAMES_TO_KEEP
+#             
+#             if abs(prev_avg-curr_avg) > change_threshold:
+#                 #print("prev avg was "+str(prev_avg)+" and curr_avg is "+str(curr_avg))
+#                 config.STONES.append([inter[0],inter[1]])
+#                 cv2.circle(display_img,tuple([inter[0],inter[1]]),5,(0,255,0),2)
+#     return display_img
 
 def simple_get_video_bg_subtract():
     video_window_name = "Go Board Live Video Stream" 
@@ -482,18 +492,42 @@ def draw_intersections2(display_img,binary_image=False):
               
     return display_img
 
-def active_intersections(img,threshold=10):
+def active_intersections(img,threshold=8):
     '''
     Checks binary image within each intersection, if enough pixels are white, that
     intersection is 'activated'
     '''
     # IMPORTANT ASSUMPTION: img is binary
+    active_inters = []
     for inter in config.INTERSECTIONS:
         # get the all the pixels in this intersection
         num_white_pixels = get_num_white_pixels(img,inter)
         if num_white_pixels > threshold:
-            print("num_white_pixels = "+str(num_white_pixels))
+            active_inters.append(inter)
+            #print("num_white_pixels = "+str(num_white_pixels))
+    
+    return active_inters
+
+def add_new_stone(active_inters):
+    '''
+    To be called each frame, if there is one active intersection for config.STONE_FRAME_THRESHOLD
+    then add a new stone!
+    '''
+    print("CURR_SINGLE_STONE_FRAME_COUNT = "+str(config.CURR_SINGLE_STONE_FRAME_COUNT))
+    if len(active_inters) == 1:
+        config.CURR_SINGLE_STONE_FRAME_COUNT +=1
         
+        if config.CURR_SINGLE_STONE_FRAME_COUNT >= config.SINGLE_STONE_FRAME_THRESHOLD:
+            if len(config.STONES) == 0:
+                config.STONES[1] = active_inters[0]
+            else:
+                if not active_inters[0] in config.STONES.values(): 
+                    last_move_number = max(config.STONES.keys())
+                    config.STONES[last_move_number+1] = active_inters[0]
+
+    else:
+        config.CURR_SINGLE_STONE_FRAME_COUNT = 0 # reset
+
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
     cv2.namedWindow(video_window_name)
@@ -542,8 +576,9 @@ def getvideo():
         rval, frame = vc.read()
         fgmask = fgbg.apply(frame)
         fgmask = transform_and_crop(fgmask,True)
-        active_intersections(fgmask)
-        fgmask = draw_intersections2(fgmask,True)
+        if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+            add_new_stone(active_intersections(fgmask))
+        #fgmask = draw_intersections2(fgmask,True)
         cv2.imshow("background subtraction", fgmask)
         config.FRAMES_CAPTURED+=1
         try:
@@ -605,7 +640,8 @@ def getvideo():
             
             update_intersection_intensity_avgs(img)
             
-            display_img = display_intersection_avgs(img)
+            #display_img = display_intersection_avgs(img)
+            display_img = display_intersection_move_number(img)
             
             for inter in config.INTERSECTIONS:
                 cv2.rectangle(display_img,tuple([int(inter[0]-6),int(inter[1]-6)]),tuple([int(inter[0]+6),int(inter[1]+6)]),(0,0,255),1)
@@ -613,7 +649,7 @@ def getvideo():
                 #cv2.putText(img,INTERSECTION_AVG_INTS[key] ,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
                 #i+=1
                 
-            display_img = check_new_stones(display_img)
+            #display_img = check_new_stones(display_img)
             #global LABELS
             #print("LABELS is "+str(LABELS))
             #for label,inter in LABELS.items():

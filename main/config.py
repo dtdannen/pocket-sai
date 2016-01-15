@@ -24,7 +24,7 @@ THRESHOLD = 0.7
 BOARD_SIZE = 19
 FRAMES_CAPTURED = 0
 INTERSECTIONS = [] # coordinates of intersections on the empty board
-STONES = [] # coordinates of stones on the board
+#STONES = [] # coordinates of stones on the board
 
 MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
 BUFFER = 8
@@ -52,4 +52,8 @@ NUM_FRAMES = 10
 LAST_FRAMES = None
 
 MOST_RECENT_IMG = None
+
+STONES = {} # key is move, val is intersection
+SINGLE_STONE_FRAME_THRESHOLD = 5
+CURR_SINGLE_STONE_FRAME_COUNT = 0
 
