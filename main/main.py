@@ -139,6 +139,35 @@ def crop(img,x1,y1,x2,y2):
     new_img = new_img[y1:y2,x1:x2]
     return new_img
 
+def get_num_white_pixels(img,inter,dist=12):
+    '''
+    ONLY TAKES A BINARY IMAGE
+    Returns the number of white pixels within a certain distance of the intersection
+    '''
+
+    x_min = inter[0] - (dist / 2)
+    x_max = inter[0] + (dist / 2)
+    y_min = inter[1] - (dist / 2)
+    y_max = inter[1] + (dist / 2)
+    num_white_pixels = 0
+    num_black_pixels = 0
+   
+    x = x_min
+    while x < x_max:
+        y = y_min
+        while y < y_max:
+            if y < int(img.shape[0]) and x < int(img.shape[1]):
+                #print("adding pixel for "+str(x)+","+str(y))
+                pixel = img[y,x]
+                
+                if pixel > 200:
+                    num_white_pixels+=1
+                else:
+                    num_black_pixels+=1 
+            y+=1
+        x+=1
+    return num_white_pixels
+
 def get_avg_intensity_inter(img,interx,intery):
     # get all surrounding pixels
     dist = 12
@@ -439,7 +468,32 @@ def simple_get_video_bg_subtract():
     
     vc.release()
     cv2.destroyAllWindows()
-    
+
+def draw_intersections2(display_img,binary_image=False):
+    display_img = display_img.copy()
+    for inter in config.INTERSECTIONS:
+        if binary_image:
+            cv2.rectangle(display_img,tuple([int(inter[0]-6),int(inter[1]-6)]),tuple([int(inter[0]+6),int(inter[1]+6)]),(255,255,255),1)
+        else:
+            cv2.rectangle(display_img,tuple([int(inter[0]-6),int(inter[1]-6)]),tuple([int(inter[0]+6),int(inter[1]+6)]),(0,0,255),1)
+        #key = str(inter[0])+","+str(inter[1])
+        #cv2.putText(img,INTERSECTION_AVG_INTS[key] ,tuple([inter[0]-5,inter[1]+3]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,50,50))
+        #i+=1
+              
+    return display_img
+
+def active_intersections(img,threshold=10):
+    '''
+    Checks binary image within each intersection, if enough pixels are white, that
+    intersection is 'activated'
+    '''
+    # IMPORTANT ASSUMPTION: img is binary
+    for inter in config.INTERSECTIONS:
+        # get the all the pixels in this intersection
+        num_white_pixels = get_num_white_pixels(img,inter)
+        if num_white_pixels > threshold:
+            print("num_white_pixels = "+str(num_white_pixels))
+        
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
     cv2.namedWindow(video_window_name)
@@ -488,6 +542,8 @@ def getvideo():
         rval, frame = vc.read()
         fgmask = fgbg.apply(frame)
         fgmask = transform_and_crop(fgmask,True)
+        active_intersections(fgmask)
+        fgmask = draw_intersections2(fgmask,True)
         cv2.imshow("background subtraction", fgmask)
         config.FRAMES_CAPTURED+=1
         try:

@@ -44,6 +44,8 @@ total_white_stone_clicks = 81
 # dictionary where the key is an intersection and the value is the go board index (i.e. J5)
 LABELS = {}
 
+ACTIVE_INTERSECTIONS = [] # each element is an intersection, which is an array of an x,y
+
 INTERSECTION_ACC_INTS = {} # key is str of x,y of coordinate, val is avg intensity of pixels in recetangle of intersection
 
 NUM_FRAMES = 10
