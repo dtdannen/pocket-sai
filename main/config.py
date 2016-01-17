@@ -57,3 +57,4 @@ STONES = {} # key is move, val is intersection
 SINGLE_STONE_FRAME_THRESHOLD = 5
 CURR_SINGLE_STONE_FRAME_COUNT = 0
 
+DETECT_STONE_THRESHOLD = 70 # percent of intersection that needs to be white

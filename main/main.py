@@ -166,7 +166,7 @@ def get_num_white_pixels(img,inter,dist=10):
                     num_black_pixels+=1 
             y+=1
         x+=1
-    return num_white_pixels
+    return num_white_pixels,num_black_pixels
 
 def get_avg_intensity_inter(img,interx,intery):
     # get all surrounding pixels
@@ -410,8 +410,19 @@ def mouseclick_show_histogram(event, x, y, flag, param):
 #         plt.show()
         #print("just showed it")
                     
+def rotate(img):
+    img = img.copy()
+    rows,cols = None,None
+    try:
+        rows,cols,ch = img.shape
+    except:
+        rows,cols = img.shape
+        
+    M = cv2.getRotationMatrix2D((cols/2,rows/2),270,1)
+    dst = cv2.warpAffine(img,M,(cols,rows))
+    return dst
+                    
 def add_img_to_last_frames(img): 
-    
     
     if config.LAST_FRAMES is None:
         # initialize LAST_FRAMES
@@ -492,7 +503,7 @@ def draw_intersections2(display_img,binary_image=False):
               
     return display_img
 
-def active_intersections(img,threshold=8):
+def active_intersections(img):
     '''
     Checks binary image within each intersection, if enough pixels are white, that
     intersection is 'activated'
@@ -501,8 +512,12 @@ def active_intersections(img,threshold=8):
     active_inters = []
     for inter in config.INTERSECTIONS:
         # get the all the pixels in this intersection
-        num_white_pixels = get_num_white_pixels(img,inter)
-        if num_white_pixels > threshold:
+        num_white_pixels, num_black_pixels = get_num_white_pixels(img,inter)
+        percent = (num_white_pixels*1.0) / (1.0*(num_white_pixels+num_black_pixels))
+        percent *= 100
+        if percent > config.DETECT_STONE_THRESHOLD:
+            print("num_white is "+str(num_white_pixels)+" num black "+str(num_black_pixels))
+            print("percent is "+str(percent))
             active_inters.append(inter)
             #print("num_white_pixels = "+str(num_white_pixels))
     
@@ -513,7 +528,8 @@ def add_new_stone(active_inters):
     To be called each frame, if there is one active intersection for config.STONE_FRAME_THRESHOLD
     then add a new stone!
     '''
-    print("CURR_SINGLE_STONE_FRAME_COUNT = "+str(config.CURR_SINGLE_STONE_FRAME_COUNT))
+    #if config.CURR_SINGLE_STONE_FRAME_COUNT > 5:
+    #    print("CURR_SINGLE_STONE_FRAME_COUNT = "+str(config.CURR_SINGLE_STONE_FRAME_COUNT))
     if len(active_inters) == 1:
         config.CURR_SINGLE_STONE_FRAME_COUNT +=1
         
@@ -534,7 +550,8 @@ def getvideo():
     vc = cv2.VideoCapture(1)
     cv2.setMouseCallback(video_window_name, mouseclick_show_histogram, param=1)
     fgbg = cv2.createBackgroundSubtractorMOG2()
-    
+    fgbg.setDetectShadows(False)
+    print(str(dir(fgbg)))
     # complicated, hacky logic, just ignore - only used to collect training data
     #will_save_white_stone_images = False
     #global SAVE_WHITE_STONE_IMAGES
@@ -572,6 +589,7 @@ def getvideo():
         rval = False
     
     while rval:
+        display_img = rotate(display_img)
         cv2.imshow(video_window_name, display_img)
         rval, frame = vc.read()
         fgmask = fgbg.apply(frame)
@@ -579,6 +597,7 @@ def getvideo():
         if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
             add_new_stone(active_intersections(fgmask))
         #fgmask = draw_intersections2(fgmask,True)
+        fgmask = rotate(fgmask)
         cv2.imshow("background subtraction", fgmask)
         config.FRAMES_CAPTURED+=1
         try:
