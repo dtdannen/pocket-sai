@@ -276,11 +276,18 @@ def display_intersection_avgs(img):
 def display_intersection_move_number(img):
     display_img = img.copy()
     dist = 12
-    
+    if len(config.INTERSECTIONS_TO_COORDINATES) > 0:
+        print("mapping is "+str(config.INTERSECTIONS_TO_COORDINATES))
     if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
         for move_num,inter in config.STONES.items():
-            val = str(move_num)    
-            cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2),inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,color=(50,255,50))
+            val = str(move_num)
+            #inter_str = str(inter[0])+","+str(inter[1])
+            if tuple(inter) in config.INTERSECTIONS_TO_COORDINATES.keys():
+                alphaCord = config.INTERSECTIONS_TO_COORDINATES[tuple(inter)]
+                cv2.putText(display_img,str(alphaCord),tuple([inter[0]-(dist / 2)+3,inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(255,255,0))    
+            else:
+                cv2.putText(display_img,str(val),tuple([inter[0]-(dist / 2)+3,inter[1]+(dist / 4)]),fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.2,color=(50,50,255))
+                print("loc = "+str(inter))
     return display_img
 
 def transform_and_crop(img, binary_image=False):
@@ -419,7 +426,7 @@ def rotate(img):
         rows,cols = img.shape
         
     M = cv2.getRotationMatrix2D((cols/2,rows/2),270,1)
-    dst = cv2.warpAffine(img,M,(cols,rows))
+    dst = cv2.warpAffine(img,M,(rows+100,cols+100))
     return dst
                     
 def add_img_to_last_frames(img): 
@@ -516,8 +523,8 @@ def active_intersections(img):
         percent = (num_white_pixels*1.0) / (1.0*(num_white_pixels+num_black_pixels))
         percent *= 100
         if percent > config.DETECT_STONE_THRESHOLD:
-            print("num_white is "+str(num_white_pixels)+" num black "+str(num_black_pixels))
-            print("percent is "+str(percent))
+            #print("num_white is "+str(num_white_pixels)+" num black "+str(num_black_pixels))
+            #print("percent is "+str(percent))
             active_inters.append(inter)
             #print("num_white_pixels = "+str(num_white_pixels))
     
@@ -536,14 +543,34 @@ def add_new_stone(active_inters):
         if config.CURR_SINGLE_STONE_FRAME_COUNT >= config.SINGLE_STONE_FRAME_THRESHOLD:
             if len(config.STONES) == 0:
                 config.STONES[1] = active_inters[0]
+                print("just added stone "+str(active_inters[0]))
             else:
                 if not active_inters[0] in config.STONES.values(): 
                     last_move_number = max(config.STONES.keys())
                     config.STONES[last_move_number+1] = active_inters[0]
+                    print("just added stone "+str(active_inters[0]))
 
     else:
         config.CURR_SINGLE_STONE_FRAME_COUNT = 0 # reset
 
+def map_intersections_to_coordinates():
+    # double check
+    if not (len(config.INTERSECTIONS_TO_COORDINATES) == 0 and len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2)):
+        return # do nothing
+    
+    # find the top left intersection
+    curr_x = 10000
+    curr_y = 10000
+    for (inter_x,inter_y) in config.INTERSECTIONS:
+        if inter_x < curr_x:
+            curr_x = inter_x
+        if inter_y < curr_y:
+            curr_y = inter_y
+    print("Top left intersection is "+str(curr_x)+","+str(curr_y))
+    #key = str(curr_x)+","+str(curr_y) 
+    config.INTERSECTIONS_TO_COORDINATES[(curr_x,curr_y)] = 'A1'
+    print(str(config.INTERSECTIONS_TO_COORDINATES))
+    
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
     cv2.namedWindow(video_window_name)
@@ -562,6 +589,7 @@ def getvideo():
     
     if vc.isOpened(): # try to get the first frame
         rval, frame = vc.read()
+        if config.ROTATE_ON: frame = rotate(frame)
         img = frame
         fgmask = fgbg.apply(frame)
         #FRAMES_CAPTURED+=1
@@ -589,15 +617,19 @@ def getvideo():
         rval = False
     
     while rval:
-        display_img = rotate(display_img)
+        
         cv2.imshow(video_window_name, display_img)
         rval, frame = vc.read()
+        if config.ROTATE_ON: frame = rotate(frame)
         fgmask = fgbg.apply(frame)
         fgmask = transform_and_crop(fgmask,True)
+        if len(config.INTERSECTIONS_TO_COORDINATES) == 0 and len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
+            map_intersections_to_coordinates() 
+        
         if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
             add_new_stone(active_intersections(fgmask))
         #fgmask = draw_intersections2(fgmask,True)
-        fgmask = rotate(fgmask)
+        if config.ROTATE_ON: fgmask = rotate(fgmask)
         cv2.imshow("background subtraction", fgmask)
         config.FRAMES_CAPTURED+=1
         try:
@@ -654,6 +686,7 @@ def getvideo():
 #                 for letter in letters:
 #                     labels.append(letter+str(num))
 #             print(str(labels))
+            
             sort_intersections()
             i = 0
             

@@ -5,10 +5,10 @@ Created on Jan 2, 2016
 '''
 
 # config variables
-ZOOM_ON = True
+ZOOM_ON = False
 SAVE_NEG_IMAGES = True
 SAVE_WHITE_STONE_IMAGES = True
-
+ROTATE_ON = True
 # Display variables
 DRAW_LINES = False
 
@@ -24,6 +24,7 @@ THRESHOLD = 0.7
 BOARD_SIZE = 19
 FRAMES_CAPTURED = 0
 INTERSECTIONS = [] # coordinates of intersections on the empty board
+INTERSECTIONS_TO_COORDINATES = {}
 #STONES = [] # coordinates of stones on the board
 
 MIN_DIST = 12 # minimum distance between stones and intersections (adjust based on physical board size)
@@ -54,7 +55,7 @@ LAST_FRAMES = None
 MOST_RECENT_IMG = None
 
 STONES = {} # key is move, val is intersection
-SINGLE_STONE_FRAME_THRESHOLD = 5
+SINGLE_STONE_FRAME_THRESHOLD = 3
 CURR_SINGLE_STONE_FRAME_COUNT = 0
 
 DETECT_STONE_THRESHOLD = 70 # percent of intersection that needs to be white
