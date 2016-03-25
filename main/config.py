@@ -8,9 +8,13 @@ Created on Jan 2, 2016
 ZOOM_ON = False
 SAVE_NEG_IMAGES = True
 SAVE_WHITE_STONE_IMAGES = True
-ROTATE_ON = True
+ROTATE_ON = False
 # Display variables
 DRAW_LINES = False
+
+VIDEO_SOURCE = "WEBCAM" # "DESKTOP | WEBCAM"
+WEBCAM_VC = None # global var holding the webcam video capture object 
+
 
 IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\StaticGoBoardImages\\'
 NEG_TRAINING_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\Training\\neg\\'

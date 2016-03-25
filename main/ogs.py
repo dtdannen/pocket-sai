@@ -64,6 +64,7 @@ class OGSBot():
         res = cv2.matchTemplate(cv_gray,chrome_icon_template,cv2.TM_CCOEFF_NORMED)
         threshold = 0.95
         loc = np.where(res >= threshold)
+        print("loc is "+str(loc))
         print("chrome_icon_template.shape = "+str(chrome_icon_template.shape))
         h,w  = chrome_icon_template.shape
         
@@ -90,7 +91,7 @@ class OGSBot():
         
         
     def go(self):
-        self.open_chrome_new_tab()
+        self.open_chrome()
 
 
 def main():
