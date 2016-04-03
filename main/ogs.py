@@ -1,102 +1,218 @@
 '''
-Created on Dec 24, 2015
-
-@author: Dustin
+Borrowed from: https://github.com/sousys/ogs/blob/master/ogs.py
+AND from: https://gist.github.com/apiarian/3bf841bb3681351dcb5198bc40249ba8
 '''
 
-from PIL import ImageGrab
-import cv2
-import numpy as np
-from matplotlib import pyplot as plt
-import win32file, win32api, win32con
-import os
-import time
+import requests   # Install this module with "pip install requests" 
+from ogs_credentials import *  # imports client_id, client_secret, username, password
 
-def click(x,y):
-    win32api.SetCursorPos((x,y))
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN,x,y,0,0)
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP,x,y,0,0)
-
-def flip(x,y):
+  
+def get_token(client_id, client_secret, username, password):
     '''
-    Given a point that assumes the origin is bottom, 
+    The API documentation was a bit confusing since it refered to urls that were http instead of https
+    and returned an error so keep that in mind when reading the api documentation.
+    Also the 'data='-part of the post-request is not really needed but i included it in the request for clarity since this is how the examples in 
+    the requests documentation show it. 
     '''
+    url = "https://online-go.com/oauth2/access_token"
+    ogs_response = requests.post(url, data={"grant_type" : "password", "client_id" : client_id, "client_secret" : client_secret, "username" : username, "password" : password})
+    return ogs_response.json()["access_token"]
 
-class OGSBot():
-    '''
-    This class is all about creating and playing a match on OGS (online-go.com)
-    '''
+  
+'''
+Below are 3 simple examples of how the token then is used to get data from the API. All very simple.
+  
+'''
+def get_user_vitals(token):
+    url = "https://online-go.com/api/v1/me/"
+    vitals = requests.get(url, headers={"Authorization" : "Bearer " + token})
+    return vitals.json()
 
-    OGS_IMAGES_DIR = 'C:\\Users\\Dustin\\Dropbox\\FunProjects\\RaspberryPiGo\\OGSBotImages\\'
+def get_user_settings(token):
+    url = "https://online-go.com/api/v1/me/settings"
+    settings = requests.get(url, headers={"Authorization" : "Bearer " + token})
+    return settings.json()
 
-    def __init__(self):
-        '''
-        Constructor
-        '''
-        self.delay = 0.3
-        
-    def open_chrome(self):
-        # get current image
-        img = ImageGrab.grab()
-        img_h = img.height
-        img_w = img.width
-        print("height is "+str(img_h)+", width is "+str(img_w))
-        
-        #plt.subplot(111),plt.imshow(img),plt.title('Raw ScreenShot')
-        #plt.show()
-        
-        # find google chrome icon
-        img_rgb = np.array(img)
-        cv_img = img_rgb.astype(np.uint8)
-        cv_gray = cv2.cvtColor(cv_img, cv2.COLOR_RGB2GRAY)
-        #plt.subplot(111),plt.imshow(cv_gray),plt.title('ScreenShot now in opencv format')
-        #plt.show()
-        #cv2.imshow(None, cv_gray)
-        #cv2.waitKey()
-        #img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
-        
-        chrome_icon_template = cv2.imread(self.OGS_IMAGES_DIR + 'GoogleChromeDesktopIcon.jpg',0)
-        #plt.subplot(111),plt.imshow(chrome_icon_template),plt.title('chrome icon')
-        #plt.show()
-        #cv2.imshow(None, chrome_icon_template)
-        #cv2.waitKey()
-         
-        res = cv2.matchTemplate(cv_gray,chrome_icon_template,cv2.TM_CCOEFF_NORMED)
-        threshold = 0.95
-        loc = np.where(res >= threshold)
-        print("loc is "+str(loc))
-        print("chrome_icon_template.shape = "+str(chrome_icon_template.shape))
-        h,w  = chrome_icon_template.shape
-        
-        
-        
-        #print("w,h,d = "+str(w)+","+str(h)+","+str(d))
-        print("loc = "+str(loc))
-        loc = [loc[1][0], loc[0][0]]
-        print("loc = "+str(loc))
-        loc = [loc[0] + (w/2), loc[1] + (h/2)]
-        print("about to set cursor")
-        
-        cv2.rectangle(img_rgb, tuple(loc), (loc[0] + w, loc[1] + h), (0,0,255), 2)
-        plt.subplot(111),plt.imshow(img_rgb),plt.title('ScreenShot')
-        plt.show()
-        
-        time.sleep(self.delay)
-        win32api.SetCursorPos((loc[0],img_h - loc[1]))
-        print("about to click")
-        time.sleep(self.delay)
-        click(loc[0], loc[1])
-        
-        
-        
-        
-    def go(self):
-        self.open_chrome()
+def get_user_games(token):
+    url = "https://online-go.com/api/v1/me/games"
+    games = requests.get(url, headers={"Authorization" : "Bearer " + token})
+    return games.json()  
 
 
-def main():
-    OGSBot().go()
+def create_a_match(token):
+    from urllib2 import Request, urlopen
+    url = "http://online-go.com/v1/challenges/"
+    headers = {"Authorization" : "Bearer " + token, 'Content-Type': 'application/json'}
+    body = """ {"game": {"name": "friendly match 123",
+                     "rules": "japanese",
+                     "ranked": false,
+                     "handicap": 0,
+                     "time_control_parameters": {
+                                                  "time_control": "fischer",
+                                                  "initial_time": 259200,
+                                                  "max_time": 604800,
+                                                  "time_increment": 86400
+                                                  },
+                     "pause_on_weekends": false,
+                     "width": 9,
+                     "height": 9,
+                     "disable_analysis": true
+                     },
+            "challenger_color": "automatic",
+            "min_ranking": 0,
+            "max_ranking": 0
+            }"""
+    #match = requests.post(url, data=body, headers=headers)
+    request = Request('http://online-go.com/v1/challenges/', data=body, headers=headers)
+    response_body = urlopen(request).read()
+    print("response_body = "+str(response_body))
+#     try:
+#         pass
+#         
+#         print("dir(match) = "+str(dir(match)))
+#         print("dir(match.json) = "+str(dir(match.json)))
+#         for item in dir(match):
+#             if item == 'content':
+#                 with open('response.html', 'w') as f:
+#                     f.write(str(match.content))
+#             if '_' not in item and item != 'content':
+#                 print("  match."+str(item)+" " +str(getattr(match,item)))
+#                 if item == 'json':
+#                     for inner_item in dir(match.json):
+#                         if '__' not in inner_item:
+#                             print("    match.json."+str(inner_item)+" " +str(getattr(match.json,inner_item)))
+#                         if inner_item == 'im_self':
+#                             for inner2_item in dir(match.json.im_self):
+#                                 if '__' not in inner2_item and inner2_item != 'content':
+#                                     #print("      match.json.im_self."+str(inner2_item)+" " +str(getattr(match.json.im_self,inner2_item)))
+#                                     pass
+#         #print("match.content = "+str(match.content))
+#         #print("match.json = "+str(match.request))
+#         
+#         #print response_body
+#     except:
+#         pass
+#     return match
+    return response_body
+
+
+def rank_to_display(rank_value):
+    if rank_value < 30:
+        return '%dk' % (30-rank_value,)
+    else:
+        return '%dd' % ((rank_value-30)+1)
+
     
-if __name__ == '__main__':
-    main()
+
+def create_match2():
+    s = requests.Session()
+
+    d = {
+         'client_id': client_id,
+         'client_secret': client_secret,
+         'grant_type': 'password',
+         'username': username,
+         'password': password,
+         }
+
+    r = s.post('https://online-go.com/oauth2/access_token',
+               headers = {
+                          'Content-Type': 'application/x-www-form-urlencoded',
+                          },
+               data = d,    
+               allow_redirects = False,
+               );
+
+    print(r.request.method, r.request.url, r.request.body);
+
+    oauth2_json = r.json()
+    access_token = oauth2_json['access_token']
+    refresh_token = oauth2_json['refresh_token']
+
+    print(oauth2_json)
+    print()
+
+    r = s.get('https://online-go.com/api/v1/me/',
+              headers = {
+                         'Authorization': 'Bearer {}'.format(access_token),
+                         },
+              )
+
+    my_info_json = r.json()
+    print(my_info_json)
+    print()
+    print('overall: {}, blitz: {}, live: {}, corr: {}'.format(
+                                                              rank_to_display(my_info_json['ranking']),
+                                                              rank_to_display(my_info_json['ranking_blitz']),
+                                                              rank_to_display(my_info_json['ranking_live']),
+                                                              rank_to_display(my_info_json['ranking_correspondence']),
+                                                              ))
+    print()
+
+    r = s.post('https://online-go.com/api/v1/challenges',
+               headers = {
+                          'Authorization': 'Bearer {}'.format(access_token),
+                          },
+               json = {
+                       'game': {
+                                'name': 'Friendly Go 123',
+                                'rules': 'japanese',
+                                'ranked': True,
+                                'handicap': -1,
+                                'time_control': 'byoyomi',
+                                'time_control_parameters': {
+                                                            "time_control": "byoyomi",
+                                                            "main_time": 600,
+                                                            "period_time": 60,
+                                                            "periods":5,
+                                                            },
+                                'pause_on_weekends': False,
+                                'width': 19,
+                                'height': 19,
+                                'disable_analysis': True,
+                                },
+                       'challenger_color': 'automatic',
+                       'min_ranking': my_info_json['ranking']-3,
+                        'max_ranking': my_info_json['ranking']+3,
+                        },
+               allow_redirects = False,
+               );
+
+# print(r.request.method, r.request.url, r.request.headers, r.request.body)
+# print()
+#
+# print(r.headers)
+    print(r.content)
+    if 'status' in r.content.keys():
+        if r.content['status'] == 'ok':
+            return r.content
+    return False
+
+if __name__ == "__main__":
+#     token = get_token(client_id, client_secret, username, password)
+# 
+#     print "\n--- vitals ---"
+#     vitals = get_user_vitals(token)
+#     for k in vitals.keys():
+#         print k, ":", vitals[k]            #prints the keys and their value in the dict returned by get_user_vitals()
+#         
+#     print "\n--- settings ---"
+#     settings = get_user_settings(token)
+#     for k in settings.keys():
+#         print k
+#     for e in settings[k]:
+#         print "  ", e, ":", settings[k][e]  #prints the keys and their value in the dict returned by get_user_settings().         
+#   
+#     print "\n--- games ---"
+#     games = get_user_games(token)
+#     for k in games.keys():
+#         print k                       
+#         
+             #print only the keys in the dict returned by get_user_games()
+    print("Created match:")
+    #create_a_match(token)
+    
+    game_data = create_match2()
+    if game_data:
+        
     

@@ -83,7 +83,7 @@ def getvideo():
             #img = cv2.dilate(img,kernel,iterations = 1)
             display_img = img.copy()
             if len(config.INTERSECTIONS_TO_COORDINATES) == 0 and len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
-                map_intersections_to_coordinates(show=True,image=display_img) 
+                map_intersections_to_coordinates(show=False,image=display_img) 
                 pass
             #display_avg_color_at_inters(display_img)
             config.MOST_RECENT_IMG = img
