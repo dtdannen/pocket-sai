@@ -5,7 +5,7 @@ AND from: https://gist.github.com/apiarian/3bf841bb3681351dcb5198bc40249ba8
 
 import requests   # Install this module with "pip install requests" 
 from ogs_credentials import *  # imports client_id, client_secret, username, password
-
+from urllib2 import Request, urlopen
   
 def get_token(client_id, client_secret, username, password):
     '''
@@ -102,11 +102,23 @@ def rank_to_display(rank_value):
     else:
         return '%dd' % ((rank_value-30)+1)
 
+# id is id of the challenge 
+def get_challenge_details(id):
+
+    request = Request('http://online-go.com/v1/challenges/id')
     
+    response_body = urlopen(request).read()
+    print response_body
+    
+def delete_challenge():
+    request = Request('http://online-go.com/v1/challenges/id')
+    request.get_method = lambda: 'DELETE'
 
-def create_match2():
-    s = requests.Session()
+    response_body = urlopen(request).read()
+    print response_body
 
+# returns the access token
+def connect(s):
     d = {
          'client_id': client_id,
          'client_secret': client_secret,
@@ -131,6 +143,10 @@ def create_match2():
 
     print(oauth2_json)
     print()
+    return access_token
+
+# get my info
+def get_my_info(s, access_token):
 
     r = s.get('https://online-go.com/api/v1/me/',
               headers = {
@@ -148,6 +164,10 @@ def create_match2():
                                                               rank_to_display(my_info_json['ranking_correspondence']),
                                                               ))
     print()
+    return my_info_json
+
+# s should be a requests.Session() object
+def create_match2(s, access_token, my_info_json):
 
     r = s.post('https://online-go.com/api/v1/challenges',
                headers = {
@@ -189,6 +209,19 @@ def create_match2():
     return False
 
 if __name__ == "__main__":
+    # start a session
+    s = requests.Session()
+    # get access token
+    access_token = connect(s)
+    # get my info
+    my_info_json = get_my_info(s, access_token)
+    # post a challenge
+    game_data = create_match2(s, access_token, my_info_json)
+    # delete that challenge
+    
+    
+    
+    
 #     token = get_token(client_id, client_secret, username, password)
 # 
 #     print "\n--- vitals ---"
@@ -208,11 +241,3 @@ if __name__ == "__main__":
 #     for k in games.keys():
 #         print k                       
 #         
-             #print only the keys in the dict returned by get_user_games()
-    print("Created match:")
-    #create_a_match(token)
-    
-    game_data = create_match2()
-    if game_data:
-        
-    
