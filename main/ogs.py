@@ -6,7 +6,11 @@ AND from: https://gist.github.com/apiarian/3bf841bb3681351dcb5198bc40249ba8
 import requests   # Install this module with "pip install requests" 
 from ogs_credentials import *  # imports client_id, client_secret, username, password
 from urllib2 import Request, urlopen
-  
+import time
+import json
+from socketIO_client import SocketIO
+from base64 import b64encode
+
 def get_token(client_id, client_secret, username, password):
     '''
     The API documentation was a bit confusing since it refered to urls that were http instead of https
@@ -96,6 +100,34 @@ def create_a_match(token):
     return response_body
 
 
+def submit_move_to_game(s,access_token,player_id,game_id,move):
+    #url = 'http://online-go.com/v1/games/'+str(game_id)+'/'+str(move)+'/'
+    url = 'https://online-go.com/api/v1/me/games/'+str(game_id)+'/'+str(move)+'/'
+    r = s.post(url,
+               headers = {
+                          'Authorization': 'Bearer {}'.format(access_token),
+                          },
+               json = {
+                       'game_id': game_id,
+                       'player_id': player_id,
+                       'move': move,
+                        },
+               allow_redirects = False,
+               );
+                
+#     r = s.get('http://online-go.com/v1/games/'+str(game_id)+'/'+str(move)+'/',
+#               headers = {
+#                          'Authorization': 'Bearer {}'.format(access_token),
+#                          },
+#               )
+#                
+    print(r.content)
+    if r.content:
+        results = json.loads(r.content)    
+        return results
+    else:
+        return False
+
 def rank_to_display(rank_value):
     if rank_value < 30:
         return '%dk' % (30-rank_value,)
@@ -103,20 +135,33 @@ def rank_to_display(rank_value):
         return '%dd' % ((rank_value-30)+1)
 
 # id is id of the challenge 
-def get_challenge_details(id):
+def get_challenge_details(s,access_token, id):
+    r = s.get('https://online-go.com/api/v1/me/challenges/'+str(id),
+              headers = {
+                         'Authorization': 'Bearer {}'.format(access_token),
+                         },
+              )
 
-    request = Request('http://online-go.com/v1/challenges/id')
+    print(r.request.method, r.request.url, r.request.body)
+    print(r.content)
     
-    response_body = urlopen(request).read()
-    print response_body
+def delete_challenge(s, access_token, id):
+    url1 = 'https://online-go.com/api/v1/me/challenges/'+str(id)+'/'
+    url2 = 'http://online-go.com/v1/challenges/'+str(id)+'/'
+    r = s.delete(url2,
+              headers = {
+                         'Authorization': 'Bearer {}'.format(access_token),
+                         },
+              )
     
-def delete_challenge():
-    request = Request('http://online-go.com/v1/challenges/id')
-    request.get_method = lambda: 'DELETE'
+    print(r.request.method, r.request.url, r.request.body)
+    print(r.content)
+    #request = Request('http://online-go.com/v1/challenges/'+str(id))
+    #request.get_method = lambda: 'DELETE'
 
-    response_body = urlopen(request).read()
-    print response_body
-
+    #response_body = urlopen(request).read()
+    #print response_body
+    
 # returns the access token
 def connect(s):
     d = {
@@ -135,7 +180,7 @@ def connect(s):
                allow_redirects = False,
                );
 
-    print(r.request.method, r.request.url, r.request.body);
+    print(r.request.method, r.request.url, r.request.body)
 
     oauth2_json = r.json()
     access_token = oauth2_json['access_token']
@@ -167,7 +212,7 @@ def get_my_info(s, access_token):
     return my_info_json
 
 # s should be a requests.Session() object
-def create_match2(s, access_token, my_info_json):
+def create_challenge(s, access_token, my_info_json):
 
     r = s.post('https://online-go.com/api/v1/challenges',
                headers = {
@@ -182,7 +227,7 @@ def create_match2(s, access_token, my_info_json):
                                 'time_control': 'byoyomi',
                                 'time_control_parameters': {
                                                             "time_control": "byoyomi",
-                                                            "main_time": 600,
+                                                            "main_time": 6000,
                                                             "period_time": 60,
                                                             "periods":5,
                                                             },
@@ -203,12 +248,13 @@ def create_match2(s, access_token, my_info_json):
 #
 # print(r.headers)
     print(r.content)
-    if 'status' in r.content.keys():
-        if r.content['status'] == 'ok':
-            return r.content
+    results = json.loads(r.content) # turn raw json str into python dict
+    if 'status' in results.keys():
+        if results['status'] == 'ok':
+            return results
     return False
 
-if __name__ == "__main__":
+def post_challenge():
     # start a session
     s = requests.Session()
     # get access token
@@ -216,12 +262,71 @@ if __name__ == "__main__":
     # get my info
     my_info_json = get_my_info(s, access_token)
     # post a challenge
-    game_data = create_match2(s, access_token, my_info_json)
+    game_data = create_challenge(s, access_token, my_info_json)
+    challenge_id = game_data['challenge']
+    game_id = game_data['game']
+    print("challenge id is "+str(challenge_id))
     # delete that challenge
+    time.sleep(0.5)
+    challenge_deets = get_challenge_details(s,access_token,challenge_id)
+    time.sleep(5)
+
+
+def send_chat():
+    #42["game/chat",{"auth":"f664b33c576ab01de7b65ce900ca7552","player_id":86412,"username":"dustyd","body":"hey are you getting this","ranking":19,"ui_class":"timeout","type":"discussion","game_id":4800859,"is_player":1,"move_number":2}]
+    pass
+def submit_move():
+    '''
+    Submitting moves happens using the real-time api, for which we will use socketIO-client
+    '''
     
+    ### FIRST GET ACCESS TOKEN
+    # start a session
+    s = requests.Session()
+    # get access token
+    access_token = connect(s)
     
+    ### NOW CONNECT VIA REAL TIME API
+    # try connecting
+    socket = SocketIO('https://ggs.online-go.com/socket.io')
     
+    def on_response(*args):
+        print('gettings a response WOO with args: ', args)
+
+    with SocketIO('https://ggs.online-go.com/socket.io') as socketIO:
+        print("socket is connected: "+str(socket.connected))
+        socketIO.emit("game/connect", 
+                    {'game_id': TODO, 'player_id': TODO, 'chat': 1, 'game_type': "game", 'auth':access_token},
+                     on_response)
+        socketIO.wait_for_callbacks(seconds=3)
+        
+        # try submitting a move
+        socketIO.emit("game/move",{"auth":access_token,"game_id":TODO,"player_id":TODO,"move":"dd"},
+                      on_response)
+        socketIO.wait_for_callbacks(seconds=3)
+        
+        
     
+    #socket.emit("game/connect", {'game_id': 4800859, 'player_id': 86412, 'chat': 1, 'game_type': "game",
+                                 #'auth':access_token})
+    #socket.emit("game/move", {})
+    print("socket is connected: "+str(socket.connected))
+    #socket.emit("game/connect", {game_id: 123, player_id: 1, chat: true});
+    #socket.emit("game/connect",)
+    
+#     my_player_id = "86412"
+#     game_id = "4792290"
+#     move = 'bc'
+#     move_results = submit_move_to_game(s,access_token,game_id,my_player_id,move)
+#     print("just tried to submit move")
+#     print("results are: "+str(move_results))
+#     
+
+if __name__ == "__main__":
+    submit_move()
+    #post_challenge()
+
+
 #     token = get_token(client_id, client_secret, username, password)
 # 
 #     print "\n--- vitals ---"
