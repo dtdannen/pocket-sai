@@ -10,6 +10,7 @@ import time
 import json
 from socketIO_client import SocketIO
 from base64 import b64encode
+import string
 
 def get_token(client_id, client_secret, username, password):
     '''
@@ -142,9 +143,35 @@ def get_challenge_details(s,access_token, id):
                          },
               )
 
-    print(r.request.method, r.request.url, r.request.body)
-    print(r.content)
+#     print(r.request.method, r.request.url, r.request.body)
+#     print(r.content)
+
+def get_game_auths(s,access_token,game_id):
+    '''
+    Returns both the game auth and the game chat auth for the given game_id
+    '''
+    r = s.get('https://online-go.com/api/v1/games/'+str(game_id)+'/',
+               headers = {
+                          'Authorization': 'Bearer {}'.format(access_token),
+                          },
+               allow_redirects = False,
+               );
+
+    #print("getting back: ")
+    #print(r.request.method, r.request.url, r.request.headers, r.request.body)
+    #print()
+    #print("headers are:")
+    #print(r.headers)
+    #print("content is: ")
+    #print(r.content)
+    results = json.loads(r.content) # turn raw json str into python dict
+    #print("results.keys() are "+str(results.keys()))
+    #print("auth key is "+str(results['auth']))
+    #print("chat auth key is "+str(results['game_chat_auth']))
+    if 'auth' in results.keys() and 'game_chat_auth' in results.keys():
+        return results['auth'], results['game_chat_auth']
     
+
 def delete_challenge(s, access_token, id):
     url1 = 'https://online-go.com/api/v1/me/challenges/'+str(id)+'/'
     url2 = 'http://online-go.com/v1/challenges/'+str(id)+'/'
@@ -180,14 +207,14 @@ def connect(s):
                allow_redirects = False,
                );
 
-    print(r.request.method, r.request.url, r.request.body)
+    #print(r.request.method, r.request.url, r.request.body)
 
     oauth2_json = r.json()
     access_token = oauth2_json['access_token']
     refresh_token = oauth2_json['refresh_token']
 
-    print(oauth2_json)
-    print()
+    #print(oauth2_json)
+    #print()
     return access_token
 
 # get my info
@@ -200,15 +227,15 @@ def get_my_info(s, access_token):
               )
 
     my_info_json = r.json()
-    print(my_info_json)
-    print()
-    print('overall: {}, blitz: {}, live: {}, corr: {}'.format(
-                                                              rank_to_display(my_info_json['ranking']),
-                                                              rank_to_display(my_info_json['ranking_blitz']),
-                                                              rank_to_display(my_info_json['ranking_live']),
-                                                              rank_to_display(my_info_json['ranking_correspondence']),
-                                                              ))
-    print()
+#     print(my_info_json)
+#     print()
+#     print('overall: {}, blitz: {}, live: {}, corr: {}'.format(
+#                                                               rank_to_display(my_info_json['ranking']),
+#                                                               rank_to_display(my_info_json['ranking_blitz']),
+#                                                               rank_to_display(my_info_json['ranking_live']),
+#                                                               rank_to_display(my_info_json['ranking_correspondence']),
+#                                                               ))
+#     print()
     return my_info_json
 
 # s should be a requests.Session() object
@@ -275,42 +302,43 @@ def post_challenge():
 def send_chat():
     #42["game/chat",{"auth":"f664b33c576ab01de7b65ce900ca7552","player_id":86412,"username":"dustyd","body":"hey are you getting this","ranking":19,"ui_class":"timeout","type":"discussion","game_id":4800859,"is_player":1,"move_number":2}]
     pass
-def submit_move():
+
+def submit_move(s, access_token, g_id, player_id, move):
     '''
     Submitting moves happens using the real-time api, for which we will use socketIO-client
     '''
     
     ### FIRST GET ACCESS TOKEN
     # start a session
-    s = requests.Session()
-    # get access token
-    access_token = connect(s)
+#     s = requests.Session()
+#     # get access token
+#     access_token = connect(s)
+#     g_id = '4830343'
+    game_auth, game_chat_auth = get_game_auths(s, access_token, g_id)
     
     ### NOW CONNECT VIA REAL TIME API
     # try connecting
-    socket = SocketIO('https://ggs.online-go.com/socket.io')
     
     def on_response(*args):
-        print('gettings a response WOO with args: ', args)
+        print('  Response after submitting move: ', args)
 
     with SocketIO('https://ggs.online-go.com/socket.io') as socketIO:
-        print("socket is connected: "+str(socket.connected))
+        #print("socket is connected: "+str(socket.connected))
         socketIO.emit("game/connect", 
-                    {'game_id': TODO, 'player_id': TODO, 'chat': 1, 'game_type': "game", 'auth':access_token},
-                     on_response)
-        socketIO.wait_for_callbacks(seconds=3)
-        
+                    {'game_id': g_id, 'player_id': player_id, 'chat': 1, 'game_type': "game", 'auth':game_auth},)
+        socketIO.wait(1)
+         
         # try submitting a move
-        socketIO.emit("game/move",{"auth":access_token,"game_id":TODO,"player_id":TODO,"move":"dd"},
+        socketIO.emit("game/move",{"auth":game_auth,"game_id":g_id,"player_id":player_id,"move":move},
                       on_response)
         socketIO.wait_for_callbacks(seconds=3)
-        
+         
         
     
     #socket.emit("game/connect", {'game_id': 4800859, 'player_id': 86412, 'chat': 1, 'game_type': "game",
                                  #'auth':access_token})
     #socket.emit("game/move", {})
-    print("socket is connected: "+str(socket.connected))
+    #print("socket is connected: "+str(socket.connected))
     #socket.emit("game/connect", {game_id: 123, player_id: 1, chat: true});
     #socket.emit("game/connect",)
     
@@ -322,8 +350,48 @@ def submit_move():
 #     print("results are: "+str(move_results))
 #     
 
+def check_valid_move(mv):
+    if len(mv) != 2:
+        return False
+    if mv[0] not in string.ascii_lowercase or mv[1] not in string.ascii_lowercase:
+        return False
+    return True
+
 if __name__ == "__main__":
-    submit_move()
+    # start a session
+    print("starting session...")
+    s = requests.Session()
+    # get access token
+    print("getting REST API access token...")
+    access_token = connect(s)
+    # get my info
+    print("getting my player info via REST API...")
+    my_info_json = get_my_info(s, access_token)
+    my_player_id = my_info_json['id']
+    # post a challenge
+    print("posting a challenge with my access_token...")
+    game_data = create_challenge(s, access_token, my_info_json)
+    print("waiting for someone to accept challenge")
+    time.sleep(5)
+    challenge_id = game_data['challenge']
+    game_id = game_data['game']
+    #print("challenge id is "+str(challenge_id))
+    # delete that challenge
+    #time.sleep(0.5)
+    #print("getting the challenge details")
+    #challenge_deets = get_challenge_details(s,access_token,challenge_id)
+    #time.sleep(5)
+    print("Everything seems good, lets play!!")
+    print("Please enter your desired move:")
+    usr_input = raw_input()
+    while usr_input != 'resign':
+        if check_valid_move(usr_input):
+            submit_move(s, access_token,game_id,my_player_id,usr_input)
+        usr_input = raw_input()
+    
+    
+    
+    
     #post_challenge()
 
 
