@@ -1,7 +1,12 @@
 '''
 Created on Dec 10, 2015
 
-@author: Dustin
+@author: Dustin Dannenhauer
+
+This script does the following:
+1. Posts a challenge online
+2. Announces when a challenge has been accepted
+3. 
 '''
 
 import cv2
@@ -19,7 +24,54 @@ import collections
 import config
 import itertools
 from PIL import ImageGrab
+import pyttsx
+import thread
+import requests
+import ogs
 
+def main():
+    # start detect board loop
+    thread.start_new_thread(board_detect_loop())
+    
+    
+def initialize():
+    '''
+    Posts a challenge online
+    '''
+    print("starting session...")
+    s = requests.Session()
+    # get access token
+    print("getting REST API access token...")
+    access_token = ogs.connect(s)
+    # get my info
+    print("getting my player info via REST API...")
+    my_info_json = ogs.get_my_info(s, access_token)
+    my_player_id = my_info_json['id']
+    # post a challenge
+    print("posting a challenge with my access_token...")
+    game_data = ogs.create_challenge(s, access_token, my_info_json)
+    print("waiting for someone to accept challenge")
+    time.sleep(5)
+    challenge_id = game_data['challenge']
+    game_id = game_data['game']
+    #print("challenge id is "+str(challenge_id))
+    # delete that challenge
+    #time.sleep(0.5)
+    #print("getting the challenge details")
+    #challenge_deets = get_challenge_details(s,access_token,challenge_id)
+    #time.sleep(5)
+    print("Everything seems good, lets play!!")
+    print("Please enter your desired move:")
+    usr_input = raw_input()
+    while usr_input != 'resign':
+        if ogs.check_valid_move(usr_input):
+            ogs.submit_move(s, access_token,game_id,my_player_id,usr_input)
+        usr_input = raw_input()
+
+
+def board_detect_loop():
+    while True:
+        getvideo()
 
 def getvideo():
     video_window_name = "Go Board Live Video Stream" 
@@ -27,7 +79,7 @@ def getvideo():
     cv2.setMouseCallback(video_window_name, mouseclick_show_histogram, param=1)
     fgbg = cv2.createBackgroundSubtractorMOG2()
     fgbg.setDetectShadows(False)
-    print(str(dir(fgbg)))
+    #print(str(dir(fgbg)))
     # complicated, hacky logic, just ignore - only used to collect training data
     #will_save_white_stone_images = False
     #global SAVE_WHITE_STONE_IMAGES
@@ -462,7 +514,8 @@ def display_intersection_move_number(img):
     display_img = img.copy()
     dist = 12
     if len(config.INTERSECTIONS_TO_COORDINATES) > 0:
-        print("mapping is "+str(config.INTERSECTIONS_TO_COORDINATES))
+        #print("mapping is "+str(config.INTERSECTIONS_TO_COORDINATES))
+        pass
     if len(config.INTERSECTIONS) == pow(config.BOARD_SIZE,2):
         for move_num,inter in config.STONES.items():
             val = str(move_num)
@@ -736,12 +789,12 @@ def add_new_stone(active_inters):
         if config.CURR_SINGLE_STONE_FRAME_COUNT >= config.SINGLE_STONE_FRAME_THRESHOLD:
             if len(config.STONES) == 0:
                 config.STONES[1] = active_inters[0]
-                print("just added stone "+str(active_inters[0]))
+                print("just detected stone stone on board at "+str(active_inters[0]))
             else:
                 if not active_inters[0] in config.STONES.values(): 
                     last_move_number = max(config.STONES.keys())
                     config.STONES[last_move_number+1] = active_inters[0]
-                    print("just added stone "+str(active_inters[0]))
+                    print("just detected stone on board at "+str(active_inters[0]))
 
     else:
         config.CURR_SINGLE_STONE_FRAME_COUNT = 0 # reset
@@ -1183,5 +1236,6 @@ def showgrid(img, grid):
 if __name__ == '__main__':
     #main()
     #transform()
-    getvideo()
+    while True:
+        getvideo()
     #simple_get_video_bg_subtract()

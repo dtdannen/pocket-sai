@@ -11,6 +11,16 @@ import json
 from socketIO_client import SocketIO
 from base64 import b64encode
 import string
+import thread
+import board_detect
+import config
+import pyttsx    
+
+# each element of this list is a tuple of coordinates of the move,
+# with a zero based index (same format the server returns)
+RECORDED_MOVES = []
+SENT_MOVE = False
+SPOKE_OPP_MOVE = False
 
 def get_token(client_id, client_secret, username, password):
     '''
@@ -42,7 +52,6 @@ def get_user_games(token):
     url = "https://online-go.com/api/v1/me/games"
     games = requests.get(url, headers={"Authorization" : "Bearer " + token})
     return games.json()  
-
 
 def create_a_match(token):
     from urllib2 import Request, urlopen
@@ -250,7 +259,7 @@ def create_challenge(s, access_token, my_info_json):
                                 'name': 'Friendly Go 123',
                                 'rules': 'japanese',
                                 'ranked': True,
-                                'handicap': -1,
+                                'handicap': 0,
                                 'time_control': 'byoyomi',
                                 'time_control_parameters': {
                                                             "time_control": "byoyomi",
@@ -303,10 +312,61 @@ def send_chat():
     #42["game/chat",{"auth":"f664b33c576ab01de7b65ce900ca7552","player_id":86412,"username":"dustyd","body":"hey are you getting this","ranking":19,"ui_class":"timeout","type":"discussion","game_id":4800859,"is_player":1,"move_number":2}]
     pass
 
-def submit_move(s, access_token, g_id, player_id, move):
+
+def detect_moves_from_board():
+    '''
+    Uses the webcam to watch for moves being placed on the board
+    
+    New moves will appear in config.STONES
+    '''
+    board_detect.board_detect_loop()
+
+def listen_for_moves(s, access_token, g_id, player_id):
+    '''
+    Connects to the game and then forever listens to moves
+    '''
+    
+    game_auth, game_chat_auth = get_game_auths(s, access_token, g_id)
+    
+    def new_move_response(*args):
+        global RECORDED_MOVES
+        global SENT_MOVE
+        
+        print "got move args "+str(args)
+        move = args[0][u'move'][0:2]
+        print "New stone placed at "+str(args[0][u'move'][0:2])
+        if move not in RECORDED_MOVES:
+            RECORDED_MOVES.append(move) 
+        SENT_MOVE = False
+    
+    def new_clock_response(*args):
+        #print "got clock args "+str(args)
+        black_player_id = args[0]['black_player_id']
+        #white_player_id = args[0]['white_player_id']
+        current_player_id = args[0]['current_player']
+        if current_player_id == black_player_id:
+            print "It is now Black's turn"
+        else:
+            print "It is now White's turn"
+    
+
+    with SocketIO('https://ggs.online-go.com/socket.io') as socketIO:
+        socketIO.emit("game/connect", 
+                   {'game_id': g_id, 'player_id': player_id, 'chat': 1, 'game_type': "game", 'auth':game_auth},)
+
+        socketIO.on("game/"+str(g_id)+"/move", new_move_response)
+        socketIO.on("game/"+str(g_id)+"/clock", new_clock_response)
+        socketIO.wait()
+
+
+
+def main(s, access_token, g_id, player_id):
     '''
     Submitting moves happens using the real-time api, for which we will use socketIO-client
     '''
+    global SPOKE_OPP_MOVE
+    global SENT_MOVE
+    global RECORDED_MOVES
     
     ### FIRST GET ACCESS TOKEN
     # start a session
@@ -316,23 +376,95 @@ def submit_move(s, access_token, g_id, player_id, move):
 #     g_id = '4830343'
     game_auth, game_chat_auth = get_game_auths(s, access_token, g_id)
     
-    ### NOW CONNECT VIA REAL TIME API
-    # try connecting
+
     
-    def on_response(*args):
-        print('  Response after submitting move: ', args)
+    #try:
+    thread.start_new_thread(detect_moves_from_board, ())
+    #except:
+    #    print "Error: unable to start thread: detect moves from board"
+
+    # start a thread that listens for game moves and clock
+    try:
+        thread.start_new_thread( listen_for_moves, (s, access_token, g_id, player_id) )
+    except:
+        print "Error: unable to start thread: listen_for_moves"
+
 
     with SocketIO('https://ggs.online-go.com/socket.io') as socketIO:
-        #print("socket is connected: "+str(socket.connected))
+        print("socket is connected: "+str(socketIO.connected))
+        
         socketIO.emit("game/connect", 
-                    {'game_id': g_id, 'player_id': player_id, 'chat': 1, 'game_type': "game", 'auth':game_auth},)
-        socketIO.wait(1)
+                   {'game_id': g_id, 'player_id': player_id, 'chat': 1, 'game_type': "game", 'auth':game_auth},)
+        #socketIO.wait(1)
+        
+        #for i in dir(socketIO):
+        #    print str(i)
+        
+        
+
+        
+        print "Game is ready, waiting for your moves"
+        while True:
+            
+            if len(config.STONES) > len(RECORDED_MOVES) and not SENT_MOVE:
+                # User placed a stone on the board
+                # send that to server
+                
+                # get last stone
+                last_stone = config.STONES[max(config.STONES.keys())]
+                print "last_stone is "+str(last_stone)
+                #x = string.ascii_lowercase[last_stone[0]]
+                #y = string.ascii_lowercase[last_stone[1]]
+                coord = config.INTERSECTIONS_TO_COORDINATES[tuple(last_stone)]
+                coord_x = coord[0]
+                coord_y = coord[1:]
+                x = string.lower(coord_x)
+                y = string.ascii_lowercase[int(coord_y)-1]
+                print "about to send move "+str(x+y)
+                socketIO.emit("game/move",{"auth":game_auth,"game_id":g_id,"player_id":player_id,"move":x+y})
+                # submit move
+                
+                SENT_MOVE = True # this gets reset when we get a move back from the server, which is the same place RECORDED MOVES gets updated
+                SPOKE_OPP_MOVE = False 
+            elif len(config.STONES) < len(RECORDED_MOVES) and not SPOKE_OPP_MOVE:  
+                # this means the opponent played a move
+                # we need to play a move on our board
+                opp_move_x = RECORDED_MOVES[-1][0]
+                opp_move_y = RECORDED_MOVES[-1][1]
+                
+                
+                engine = pyttsx.init()
+                voice_id = engine.getProperty('voices')[1]
+                #engine.setProperty('rate',70)
+                engine.setProperty('voice', voice_id)
+                engine.say('Your opponent played a move at '+str(opp_move_x)+" "+str(opp_move_y))
+                engine.runAndWait()
+                SPOKE_OPP_MOVE = True
+                SENT_MOVE = False
+        
+        print("Please enter your desired move:")
+        usr_input = raw_input()
+        while usr_input != 'resign':
+            if check_valid_move(usr_input):
+                socketIO.emit("game/move",{"auth":game_auth,"game_id":g_id,"player_id":player_id,"move":usr_input})
+                print("Just submitted your move!")
+            print("What is your next move?")
+            usr_input = raw_input()
+       
          
         # try submitting a move
-        socketIO.emit("game/move",{"auth":game_auth,"game_id":g_id,"player_id":player_id,"move":move},
-                      on_response)
-        socketIO.wait_for_callbacks(seconds=3)
+        #print "auth is "+str(game_auth)
+        #print "game_id is "+str(g_id)
+        #print "player_id is "+str(player_id)
+        #print "move is "+str(move)
+        
+        #socketIO.wait_for_callbacks(seconds=3)
          
+        
+    
+    
+        
+        
         
     
     #socket.emit("game/connect", {'game_id': 4800859, 'player_id': 86412, 'chat': 1, 'game_type': "game",
@@ -382,13 +514,8 @@ if __name__ == "__main__":
     #challenge_deets = get_challenge_details(s,access_token,challenge_id)
     #time.sleep(5)
     print("Everything seems good, lets play!!")
-    print("Please enter your desired move:")
-    usr_input = raw_input()
-    while usr_input != 'resign':
-        if check_valid_move(usr_input):
-            submit_move(s, access_token,game_id,my_player_id,usr_input)
-        usr_input = raw_input()
     
+    main(s, access_token,game_id,my_player_id)
     
     
     
